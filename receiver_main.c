@@ -10,13 +10,13 @@
 #include <netdb.h>
 
 int globalSocketUDP;
+struct sockaddr_in theirAddr;
+socklen_t theirAddrLen;
+unsigned char recvBuf [10];
+int bytesRecvd;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
-	struct sockaddr_in theirAddr;
-	socklen_t theirAddrLen;
-	unsigned char recvBuf [10];
-	int bytesRecvd;
-	theirAddrLen = sizeof(theirAddr);
+	
 	printf("%s\n", "Waiting for sender...");
 	if ((bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 2048, 0, 
 				(struct sockaddr*)&theirAddr, &theirAddrLen)) == -1)
@@ -28,16 +28,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 }
 
-int main(int argc, char** argv)
-{
-	unsigned short int udpPort;
-	
-	if(argc != 3)
-	{
-		fprintf(stderr, "usage: %s UDP_port filename_to_write\n\n", argv[0]);
-		exit(1);
-	}
-
+void setUpPortInfo() {
 	//socket() and bind() our socket. We will do all sendto()ing and recvfrom()ing on this one.
 	if((globalSocketUDP=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
@@ -57,7 +48,21 @@ int main(int argc, char** argv)
 		close(globalSocketUDP);
 		exit(1);
 	}
+	theirAddrLen = sizeof(theirAddr);
+}
+
+int main(int argc, char** argv)
+{
+	unsigned short int udpPort;
 	
+	if(argc != 3)
+	{
+		fprintf(stderr, "usage: %s UDP_port filename_to_write\n\n", argv[0]);
+		exit(1);
+	}
+
+	setUpPortInfo();
+
 	udpPort = (unsigned short int)atoi(argv[1]);
 	
 	reliablyReceive(udpPort, argv[2]);

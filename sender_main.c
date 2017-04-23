@@ -10,29 +10,13 @@
 #include <netdb.h>
 
 int globalSocketUDP;
+struct sockaddr_in receiver;
 
 void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* filename, unsigned long long int bytesToTransfer) {
-	struct sockaddr_in receiver;
-	char tempaddr[100];
-	sprintf(tempaddr, "127.0.0.1");
-	memset(&receiver, 0, sizeof(receiver));
-	receiver.sin_family = AF_INET;
-	receiver.sin_port = htons(5000);
-	inet_pton(AF_INET, tempaddr, &receiver.sin_addr);
 	sendto(globalSocketUDP, "hello", 6, 0, (struct sockaddr*)&receiver, sizeof(receiver));
 }
 
-int main(int argc, char** argv)
-{
-	unsigned short int udpPort;
-	unsigned long long int numBytes;
-	
-	if(argc != 5)
-	{
-		fprintf(stderr, "usage: %s receiver_hostname receiver_port filename_to_xfer bytes_to_xfer\n\n", argv[0]);
-		exit(1);
-	}
-
+void setUpPortInfo() {
 	//socket() and bind() our socket. We will do all sendto()ing and recvfrom()ing on this one.
 	if((globalSocketUDP=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
@@ -52,6 +36,27 @@ int main(int argc, char** argv)
 		close(globalSocketUDP);
 		exit(1);
 	}
+
+	char tempaddr[100];
+	sprintf(tempaddr, "127.0.0.1");
+	memset(&receiver, 0, sizeof(receiver));
+	receiver.sin_family = AF_INET;
+	receiver.sin_port = htons(5000);
+	inet_pton(AF_INET, tempaddr, &receiver.sin_addr);
+}
+
+int main(int argc, char** argv)
+{
+	unsigned short int udpPort;
+	unsigned long long int numBytes;
+	
+	if(argc != 5)
+	{
+		fprintf(stderr, "usage: %s receiver_hostname receiver_port filename_to_xfer bytes_to_xfer\n\n", argv[0]);
+		exit(1);
+	}
+
+	setUpPortInfo();
 
 	udpPort = (unsigned short int)atoi(argv[2]);
 	numBytes = atoll(argv[4]);
