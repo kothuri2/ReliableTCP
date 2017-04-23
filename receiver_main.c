@@ -10,6 +10,10 @@
 #include <netdb.h>
 
 int globalSocketUDP;
+#define RWS = 8;
+#define MAX_SEQ_NO = 16;
+#define FRAME_SIZE = 1472;
+
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 	struct sockaddr_in theirAddr;
@@ -18,7 +22,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 	int bytesRecvd;
 	theirAddrLen = sizeof(theirAddr);
 	printf("%s\n", "Waiting for sender...");
-	if ((bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 2048, 0, 
+	if ((bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 2048, 0,
 				(struct sockaddr*)&theirAddr, &theirAddrLen)) == -1)
 	{
 		perror("connectivity listener: recvfrom failed");
@@ -31,7 +35,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 int main(int argc, char** argv)
 {
 	unsigned short int udpPort;
-	
+
 	if(argc != 3)
 	{
 		fprintf(stderr, "usage: %s UDP_port filename_to_write\n\n", argv[0]);
@@ -57,8 +61,8 @@ int main(int argc, char** argv)
 		close(globalSocketUDP);
 		exit(1);
 	}
-	
+
 	udpPort = (unsigned short int)atoi(argv[1]);
-	
+
 	reliablyReceive(udpPort, argv[2]);
 }
