@@ -28,7 +28,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 }
 
-void setUpPortInfo() {
+void setUpPortInfo(unsigned short int my_port) {
 	//socket() and bind() our socket. We will do all sendto()ing and recvfrom()ing on this one.
 	if((globalSocketUDP=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
@@ -40,7 +40,7 @@ void setUpPortInfo() {
 	sprintf(myAddr, "127.0.0.1");
 	memset(&bindAddr, 0, sizeof(bindAddr));
 	bindAddr.sin_family = AF_INET;
-	bindAddr.sin_port = htons(5000);
+	bindAddr.sin_port = htons(my_port);
 	inet_pton(AF_INET, myAddr, &bindAddr.sin_addr);
 	if(bind(globalSocketUDP, (struct sockaddr*)&bindAddr, sizeof(struct sockaddr_in)) < 0)
 	{
@@ -61,9 +61,7 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
-	setUpPortInfo();
-
 	udpPort = (unsigned short int)atoi(argv[1]);
-	
+	setUpPortInfo(udpPort);
 	reliablyReceive(udpPort, argv[2]);
 }

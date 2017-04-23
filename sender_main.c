@@ -16,7 +16,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	sendto(globalSocketUDP, "hello", 6, 0, (struct sockaddr*)&receiver, sizeof(receiver));
 }
 
-void setUpPortInfo() {
+void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_port) {
 	//socket() and bind() our socket. We will do all sendto()ing and recvfrom()ing on this one.
 	if((globalSocketUDP=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
@@ -37,12 +37,10 @@ void setUpPortInfo() {
 		exit(1);
 	}
 
-	char tempaddr[100];
-	sprintf(tempaddr, "127.0.0.1");
 	memset(&receiver, 0, sizeof(receiver));
 	receiver.sin_family = AF_INET;
-	receiver.sin_port = htons(5000);
-	inet_pton(AF_INET, tempaddr, &receiver.sin_addr);
+	receiver.sin_port = htons(receiver_port);
+	inet_pton(AF_INET, receiver_hostname, &receiver.sin_addr);
 }
 
 int main(int argc, char** argv)
@@ -56,10 +54,8 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
-	setUpPortInfo();
-
 	udpPort = (unsigned short int)atoi(argv[2]);
+	setUpPortInfo((const char *)argv[1], udpPort);
 	numBytes = atoll(argv[4]);
-	
 	reliablyTransfer(argv[1], udpPort, argv[3], numBytes);
 } 
