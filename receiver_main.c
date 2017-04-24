@@ -52,7 +52,8 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 		//
 		// }
 		else{
-			sendto(myUDPport, &LFR, sizeof(int), 0, (struct sockaddr*)&theirAddr, theirAddrLen);
+			if(LFR != -1)
+				sendto(myUDPport, &LFR, sizeof(int), 0, (struct sockaddr*)&theirAddr, theirAddrLen);
 		}
 
 	}
