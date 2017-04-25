@@ -21,15 +21,14 @@ typedef struct Frame {
 	char* data;
 } frame;
 
-int globalSocketUDP;
-char fromAddr[100];
-// struct sockaddr_in theirAddr;
-// socklen_t theirAddrLen;
-// struct sockaddr_in ACKsender;
-struct sockaddr_storage sender;
+int sockfd; /* socket */
+int clientlen; /* byte size of client's address */
+struct sockaddr_in serveraddr; /* server's addr */
+struct sockaddr_in clientaddr; /* client addr */
+struct hostent *hostp; /* client host info */
+char *hostaddrp; /* dotted decimal host addr string */
+int optval; /* flag value for setsockopt */
 socklen_t sendersize;
-int NFE = 0;
-int LFR = -1;
 int request_number = 0;
 int bytesRecvd;
 
@@ -39,51 +38,35 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 	unsigned char recData [FRAME_SIZE];
 	FILE * fd = fopen(destinationFile, "w");
-	while ((bytesRecvd = recvfrom(globalSocketUDP, recData, DATA_SIZE, 0, (struct sockaddr*)&sender, &sendersize)) > 0) {
+	while (1) {
+		bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
 		frame * newFrame = malloc(FRAME_SIZE);
 		newFrame->sequence_num = *((int *)(recData));
 		newFrame->data = ((char*)(recData + sizeof(int)));
-		printf("%d %s\n", newFrame->sequence_num, newFrame->data);
 		if(newFrame->sequence_num == request_number) {
 			fwrite(newFrame->data, 1, strlen(newFrame->data), fd);
 			fflush(fd);
 			request_number = request_number + 1;
 		}
-		//inet_ntop(AF_INET, &theirAddr.sin_addr, fromAddr, 100);
-		sendto(globalSocketUDP, &request_number, sizeof(int), 0, (struct sockaddr*)&sender, sendersize);
+		hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+	    hostaddrp = inet_ntoa(clientaddr.sin_addr);
+	    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+		sendto(sockfd, "hello", strlen("hello"), 0, (struct sockaddr*)&clientaddr, clientlen);
 		free(newFrame);
 	}
 
 }
 
 void setUpPortInfo(unsigned short int my_port) {
-	//socket() and bind() our socket. We will do all sendto()ing and recvfrom()ing on this one.
-	if((globalSocketUDP=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-	{
-		perror("socket");
-		exit(1);
-	}
-	char myAddr[100];
-	struct sockaddr_in bindAddr;
-	sprintf(myAddr, "127.0.0.1");
-	memset(&bindAddr, 0, sizeof(bindAddr));
-	bindAddr.sin_family = AF_INET;
-	bindAddr.sin_port = htons(my_port);
-	inet_pton(AF_INET, myAddr, &bindAddr.sin_addr);
-	if(bind(globalSocketUDP, (struct sockaddr*)&bindAddr, sizeof(struct sockaddr_in)) < 0)
-	{
-		perror("bind");
-		close(globalSocketUDP);
-		exit(1);
-	}
-	sendersize = sizeof(sender);
-	bzero(&sender, sizeof(sender));
-	// theirAddrLen = sizeof(theirAddr);
-	//
-	// memset(&ACKsender, 0, sizeof(ACKsender));
-	// ACKsender.sin_family = AF_INET;
-	// ACKsender.sin_port = htons(my_port);
-	// inet_pton(AF_INET, myAddr, &ACKsender.sin_addr);
+	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+	optval = 1;
+	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(int));
+	bzero((char *) &serveraddr, sizeof(serveraddr));
+  	serveraddr.sin_family = AF_INET;
+  	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  	serveraddr.sin_port = htons((unsigned short)my_port);
+	bind(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr));
+	clientlen = sizeof(clientaddr);
 }
 
 int main(int argc, char** argv)

@@ -38,15 +38,9 @@ void* receiveAcks(void * unusedParam) {
 
 	while(1) {
 		//theirAddrLen = sizeof(theirAddr);
-		if ((bytesRecvd = recvfrom(globalSocketUDP, recvBuf, sizeof(int), 0, (struct sockaddr*)&serveraddr, &serverlen)) == -1)
-		{
-			perror("connectivity listener: recvfrom failed");
-			exit(1);
-		}
-
+		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
 		//Received an ACK
 		int request_number = *((int *) recvBuf);
-		printf("%d\n", request_number);
 		if (request_number > sequence_base) {
 			sequence_max = (sequence_max - sequence_base) + request_number;
 			sequence_base = request_number;
@@ -65,9 +59,13 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		numberOfFrames++;
 	if(bytesToTransfer < numBytesToRead)
 		numberOfFrames = 1;
+
 	int lastPacketSize = bytesToTransfer - (numberOfFrames*numBytesToRead);
 	FILE * file = fopen(filename, "r");
 	frame allFrames [numberOfFrames];
+	if(bytesToTransfer < numBytesToRead) {
+		numberOfFrames = 1;
+	}
 	int acks [numberOfFrames];
 	int i;
 	for (i = 0; i < numberOfFrames; i++) {
@@ -77,11 +75,12 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 
 	while(1) {
 		if(sendFlag == 0) {
-			if(sequence_base == (numberOfFrames - 1) ) {
+			if(sequence_base == (numberOfFrames - 1)) {
 				break;
 			}
 			i = sequence_base;
 			for(; i <= sequence_max; i++) {
+				printf("%d %d %d\n", sequence_base, allFrames[i].sequence_number, sequence_max);
 				if(sequence_base <= allFrames[i].sequence_number && allFrames[i].sequence_number <= sequence_max) {
 					// Transmit the packet
 					if(i != (numberOfFrames - 1)) {
@@ -89,6 +88,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 					} else {
 						fread(allFrames[i].data,1,lastPacketSize,file);
 					}
+					printf("Sending...\n");
 					sendto(globalSocketUDP, ((const void *) &allFrames[i]), sizeof(allFrames[i]), 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
@@ -97,6 +97,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 			pthread_mutex_unlock(&sendFlagMutex);
 		}
 	}
+
 	printf("%s\n", "Successfuly transferred file!");
 	fclose(file);
 
@@ -127,11 +128,10 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
 	/*
 	char myAddr[100];
 	struct sockaddr_in bindAddr;
-	sprintf(myAddr, "127.0.0.1");
 	memset(&bindAddr, 0, sizeof(bindAddr));
 	bindAddr.sin_family = AF_INET;
-	bindAddr.sin_port = htons(9000);
-	inet_pton(AF_INET, myAddr, &bindAddr.sin_addr);
+	bindAddr.sin_port = htons(receiver_port);
+	inet_pton(AF_INET, receiver_hostname, &bindAddr.sin_addr);
 	if(bind(globalSocketUDP, (struct sockaddr*)&bindAddr, sizeof(struct sockaddr_in)) < 0)
 	{
 		perror("bind");
@@ -162,8 +162,10 @@ int main(int argc, char** argv)
 	udpPort = (unsigned short int)atoi(argv[2]);
 	setUpPortInfo((const char *)argv[1], udpPort);
 	numBytes = atoll(argv[4]);
-	reliablyTransfer(argv[1], udpPort, argv[3], numBytes);
 
 	pthread_t receiveAcksThread;
 	pthread_create(&receiveAcksThread, 0, receiveAcks, (void*)0);
+
+	reliablyTransfer(argv[1], udpPort, argv[3], numBytes);
+
 }
