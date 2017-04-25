@@ -65,6 +65,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	frame allFrames [numberOfFrames];
 	if(bytesToTransfer < numBytesToRead) {
 		numberOfFrames = 1;
+		lastPacketSize = bytesToTransfer;
 	}
 	int acks [numberOfFrames];
 	int i;
@@ -97,14 +98,14 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 			pthread_mutex_unlock(&sendFlagMutex);
 		}
 	}
-
+	printf("here\n");
+	fread(allFrames[sequence_base].data,1,numBytesToRead,file);
 	printf("%s\n", "Successfuly transferred file!");
 	fclose(file);
 
 }
 
 void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_port) {
-	//socket() and bind() our socket. We will do all sendto()ing and recvfrom()ing on this one.
 	if((globalSocketUDP=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
 		perror("socket");
@@ -118,11 +119,11 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
 	}
 
 	/* build the server's Internet address */
-  bzero((char *) &serveraddr, sizeof(serveraddr));
-  serveraddr.sin_family = AF_INET;
-  bcopy((char *)server->h_addr,
-  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
-  serveraddr.sin_port = htons(receiver_port);
+  	bzero((char *) &serveraddr, sizeof(serveraddr));
+  	serveraddr.sin_family = AF_INET;
+  	bcopy((char *)server->h_addr,
+  	(char *)&serveraddr.sin_addr.s_addr, server->h_length);
+  	serveraddr.sin_port = htons(receiver_port);
 	serverlen = sizeof(serveraddr);
 
 }
