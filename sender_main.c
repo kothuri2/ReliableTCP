@@ -55,10 +55,11 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	//sendto(globalSocketUDP, "hello", 6, 0, (struct sockaddr*)&receiver, sizeof(receiver));
 	int numBytesToRead = PAYLOAD_SIZE - sizeof(int);
 	int numberOfFrames = bytesToTransfer/(numBytesToRead);
-	if(bytesToTransfer % numBytesToRead != 0) {
-		numberOfFrames += 1;
-	}
-	printf("%llu %d %d\n", bytesToTransfer, numBytesToRead, numberOfFrames);
+	if(bytesToTransfer%numBytesToRead != 0)
+		numberOfFrames++;
+	if(bytesToTransfer < numBytesToRead)
+		numberOfFrames = 1;
+
 	int lastPacketSize = bytesToTransfer - (numberOfFrames*numBytesToRead);
 	FILE * file = fopen(filename, "r");
 	frame allFrames [numberOfFrames];
