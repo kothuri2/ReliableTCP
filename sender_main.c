@@ -125,24 +125,6 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
   serveraddr.sin_port = htons(receiver_port);
 	serverlen = sizeof(serveraddr);
 
-	/*
-	char myAddr[100];
-	struct sockaddr_in bindAddr;
-	memset(&bindAddr, 0, sizeof(bindAddr));
-	bindAddr.sin_family = AF_INET;
-	bindAddr.sin_port = htons(receiver_port);
-	inet_pton(AF_INET, receiver_hostname, &bindAddr.sin_addr);
-	if(bind(globalSocketUDP, (struct sockaddr*)&bindAddr, sizeof(struct sockaddr_in)) < 0)
-	{
-		perror("bind");
-		close(globalSocketUDP);
-		exit(1);
-	}
-
-	memset(&receiver, 0, sizeof(receiver));
-	receiver.sin_family = AF_INET;
-	receiver.sin_port = htons(receiver_port);
-	inet_pton(AF_INET, receiver_hostname, &receiver.sin_addr);*/
 }
 
 int main(int argc, char** argv)
