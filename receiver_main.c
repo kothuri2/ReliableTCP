@@ -25,6 +25,7 @@ int globalSocketUDP;
 char fromAddr[100];
 struct sockaddr_in theirAddr;
 socklen_t theirAddrLen;
+struct sockaddr_in ACKsender;
 int NFE = 0;
 int LFR = -1;
 int request_number = 0;
@@ -34,12 +35,12 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 	printf("%s\n", "Waiting for sender...");
 
-	unsigned char data [FRAME_SIZE];
+	unsigned char recData [FRAME_SIZE];
 	FILE * fd = fopen(destinationFile, "w");
-	while ((bytesRecvd = recvfrom(globalSocketUDP, data, DATA_SIZE, 0, (struct sockaddr*)&theirAddr, &theirAddrLen)) > 0) {
+	while ((bytesRecvd = recvfrom(globalSocketUDP, recData, DATA_SIZE, 0, (struct sockaddr*)&theirAddr, &theirAddrLen)) > 0) {
 		frame * newFrame = malloc(FRAME_SIZE);
-		newFrame->sequence_num = *((int *)(data));
-		newFrame->data = ((char*)(data + sizeof(int)));
+		newFrame->sequence_num = *((int *)(recData));
+		newFrame->data = ((char*)(recData + sizeof(int)));
 		printf("%d %s\n", newFrame->sequence_num, newFrame->data);
 		if(newFrame->sequence_num == request_number) {
 			fwrite(newFrame->data, 1, strlen(newFrame->data), fd);
@@ -47,7 +48,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			request_number = request_number + 1;
 		}
 		inet_ntop(AF_INET, &theirAddr.sin_addr, fromAddr, 100);
-		sendto(globalSocketUDP, &request_number, sizeof(int), 0, (struct sockaddr*)&theirAddr, theirAddrLen);
+		sendto(globalSocketUDP, &request_number, sizeof(int), 0, (struct sockaddr*)&ACKsender, sizeof(ACKsender));
 		free(newFrame);
 	}
 
