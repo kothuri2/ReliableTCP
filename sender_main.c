@@ -46,7 +46,7 @@ void* receiveAcks(void * unusedParam) {
 
 		//Received an ACK
 		int request_number = *((int *) recvBuf);
-		printf("%d\n", request_number);
+		printf("Received an ACK\n");
 		if (request_number > sequence_base) {
 			sequence_max = (sequence_max - sequence_base) + request_number;
 			sequence_base = request_number;
@@ -123,11 +123,10 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
 	/*
 	char myAddr[100];
 	struct sockaddr_in bindAddr;
-	sprintf(myAddr, "127.0.0.1");
 	memset(&bindAddr, 0, sizeof(bindAddr));
 	bindAddr.sin_family = AF_INET;
-	bindAddr.sin_port = htons(9000);
-	inet_pton(AF_INET, myAddr, &bindAddr.sin_addr);
+	bindAddr.sin_port = htons(receiver_port);
+	inet_pton(AF_INET, receiver_hostname, &bindAddr.sin_addr);
 	if(bind(globalSocketUDP, (struct sockaddr*)&bindAddr, sizeof(struct sockaddr_in)) < 0)
 	{
 		perror("bind");
