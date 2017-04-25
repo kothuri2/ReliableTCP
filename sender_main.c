@@ -41,6 +41,7 @@ void* receiveAcks(void * unusedParam) {
 
 		//Received an ACK
 		int request_number = *((int *) recvBuf);
+		printf("%d\n", request_number);
 		if (request_number > sequence_base) {
 			sequence_max = (sequence_max - sequence_base) + request_number;
 			sequence_base = request_number;

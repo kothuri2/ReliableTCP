@@ -16,48 +16,40 @@
 #define FRAME_SIZE 1472
 #define DATA_SIZE (FRAME_SIZE - sizeof(int))
 
-// typedef struct Frame {
-// 	int* sequence_num;
-// 	void* data;
-// } frame;
+typedef struct Frame {
+	int sequence_num;
+	char* data;
+} frame;
 
 int globalSocketUDP;
+char fromAddr[100];
 struct sockaddr_in theirAddr;
 socklen_t theirAddrLen;
-//int bitmap[MAX_SEQ_NO];
 int NFE = 0;
 int LFR = -1;
-//unsigned char recvBuf [10];
+int request_number = 0;
 int bytesRecvd;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 	printf("%s\n", "Waiting for sender...");
 
-	//frame* newframe = malloc(sizeof(frame));
-	int* sequence_num = malloc(sizeof(int));
-	void* data = malloc(FRAME_SIZE);
-	int fd = open(destinationFile, O_WRONLY | O_CREAT | O_TRUNC);
-
-	while ((bytesRecvd = recvfrom(myUDPport, data, DATA_SIZE, 0, (struct sockaddr*)&theirAddr, &theirAddrLen)) > 0) {
-		strncpy((void*)sequence_num, data, sizeof(int));
-		void* filedata = data + sizeof(int);
-		if(*sequence_num == NFE && bytesRecvd == FRAME_SIZE) {
-			write(fd, filedata, DATA_SIZE);
-			LFR = NFE;
-			NFE = (NFE + 1) % MAX_SEQ_NO;
-			sendto(myUDPport, &LFR, sizeof(int), 0, (struct sockaddr*)&theirAddr, theirAddrLen);
+	unsigned char data [FRAME_SIZE];
+	FILE * fd = fopen(destinationFile, "w");
+	while ((bytesRecvd = recvfrom(globalSocketUDP, data, DATA_SIZE, 0, (struct sockaddr*)&theirAddr, &theirAddrLen)) > 0) {
+		frame * newFrame = malloc(FRAME_SIZE);
+		newFrame->sequence_num = *((int *)(data));
+		newFrame->data = ((char*)(data + sizeof(int)));
+		printf("%d %s\n", newFrame->sequence_num, newFrame->data);
+		if(newFrame->sequence_num == request_number) {
+			fwrite(newFrame->data, 1, strlen(newFrame->data), fd);
+			fflush(fd);
+			request_number = request_number + 1;
 		}
-		// else if(sequence_num == NFE && ) {
-		//
-		// }
-		else{
-			if(LFR != -1)
-				sendto(myUDPport, &LFR, sizeof(int), 0, (struct sockaddr*)&theirAddr, theirAddrLen);
-		}
-
+		inet_ntop(AF_INET, &theirAddr.sin_addr, fromAddr, 100);
+		sendto(globalSocketUDP, &request_number, sizeof(int), 0, (struct sockaddr*)&theirAddr, theirAddrLen);
+		free(newFrame);
 	}
-	//printf("%s\n", recvBuf);
 
 }
 
