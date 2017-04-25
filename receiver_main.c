@@ -23,9 +23,11 @@ typedef struct Frame {
 
 int globalSocketUDP;
 char fromAddr[100];
-struct sockaddr_in theirAddr;
-socklen_t theirAddrLen;
-struct sockaddr_in ACKsender;
+// struct sockaddr_in theirAddr;
+// socklen_t theirAddrLen;
+// struct sockaddr_in ACKsender;
+struct sockaddr_storage sender;
+socklen_t sendersize;
 int NFE = 0;
 int LFR = -1;
 int request_number = 0;
@@ -37,7 +39,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 	unsigned char recData [FRAME_SIZE];
 	FILE * fd = fopen(destinationFile, "w");
-	while ((bytesRecvd = recvfrom(globalSocketUDP, recData, DATA_SIZE, 0, (struct sockaddr*)&theirAddr, &theirAddrLen)) > 0) {
+	while ((bytesRecvd = recvfrom(globalSocketUDP, recData, DATA_SIZE, 0, (struct sockaddr*)&sender, &sendersize)) > 0) {
 		frame * newFrame = malloc(FRAME_SIZE);
 		newFrame->sequence_num = *((int *)(recData));
 		newFrame->data = ((char*)(recData + sizeof(int)));
@@ -47,8 +49,8 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			fflush(fd);
 			request_number = request_number + 1;
 		}
-		inet_ntop(AF_INET, &theirAddr.sin_addr, fromAddr, 100);
-		sendto(globalSocketUDP, &request_number, sizeof(int), 0, (struct sockaddr*)&ACKsender, sizeof(ACKsender));
+		//inet_ntop(AF_INET, &theirAddr.sin_addr, fromAddr, 100);
+		sendto(globalSocketUDP, &request_number, sizeof(int), 0, (struct sockaddr*)&sender, sendersize);
 		free(newFrame);
 	}
 
@@ -74,12 +76,14 @@ void setUpPortInfo(unsigned short int my_port) {
 		close(globalSocketUDP);
 		exit(1);
 	}
-	theirAddrLen = sizeof(theirAddr);
-
-	memset(&ACKsender, 0, sizeof(ACKsender));
-	ACKsender.sin_family = AF_INET;
-	ACKsender.sin_port = htons(my_port);
-	inet_pton(AF_INET, myAddr, &ACKsender.sin_addr);
+	sendersize = sizeof(sender);
+	bzero(&sender, sizeof(sender));
+	// theirAddrLen = sizeof(theirAddr);
+	//
+	// memset(&ACKsender, 0, sizeof(ACKsender));
+	// ACKsender.sin_family = AF_INET;
+	// ACKsender.sin_port = htons(my_port);
+	// inet_pton(AF_INET, myAddr, &ACKsender.sin_addr);
 }
 
 int main(int argc, char** argv)
