@@ -75,6 +75,11 @@ void setUpPortInfo(unsigned short int my_port) {
 		exit(1);
 	}
 	theirAddrLen = sizeof(theirAddr);
+
+	memset(&ACKsender, 0, sizeof(ACKsender));
+	ACKsender.sin_family = AF_INET;
+	ACKsender.sin_port = htons(my_port);
+	//inet_pton(AF_INET, receiver_hostname, &ACKsender.sin_addr);
 }
 
 int main(int argc, char** argv)
