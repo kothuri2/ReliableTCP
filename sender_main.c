@@ -10,10 +10,16 @@
 #include <pthread.h>
 #include <netdb.h>
 
+//int sockfd, portno, n;
+int serverlen;
+struct sockaddr_in serveraddr;
+struct hostent *server;
+//char *hostname;
+
 int globalSocketUDP;
 int WINDOW_SIZE = 4;
 int PAYLOAD_SIZE = 1472;
-struct sockaddr_in receiver;
+//struct sockaddr_in receiver;
 int sequence_base = 0;
 int sequence_max;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
@@ -25,15 +31,14 @@ typedef struct Frame {
 } frame;
 
 void* receiveAcks(void * unusedParam) {
-	struct sockaddr_in theirAddr;
-	socklen_t theirAddrLen;
+	//struct sockaddr_in theirAddr;
+	//socklen_t theirAddrLen;
 	unsigned char recvBuf [8];
 	int bytesRecvd;
 
 	while(1) {
-		theirAddrLen = sizeof(theirAddr);
-		if ((bytesRecvd = recvfrom(globalSocketUDP, recvBuf, sizeof(int), 0,
-					(struct sockaddr*)&theirAddr, &theirAddrLen)) == -1)
+		//theirAddrLen = sizeof(theirAddr);
+		if ((bytesRecvd = recvfrom(globalSocketUDP, recvBuf, sizeof(int), 0, (struct sockaddr*)&serveraddr, &serverlen)) == -1)
 		{
 			perror("connectivity listener: recvfrom failed");
 			exit(1);
@@ -80,7 +85,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 					} else {
 						fread(allFrames[i].data,1,lastPacketSize,file);
 					}
-					sendto(globalSocketUDP, ((const void *) &allFrames[i]), sizeof(allFrames[i]), 0, (struct sockaddr*)&receiver, sizeof(receiver));
+					sendto(globalSocketUDP, ((const void *) &allFrames[i]), sizeof(allFrames[i]), 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
 			pthread_mutex_lock(&sendFlagMutex);
@@ -100,6 +105,22 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
 		perror("socket");
 		exit(1);
 	}
+
+	server = gethostbyname(receiver_hostname);
+	if(server == NULL) {
+		fprintf(stderr, "%s\n", "No such Host Name");
+		exit(0);
+	}
+
+	/* build the server's Internet address */
+  bzero((char *) &serveraddr, sizeof(serveraddr));
+  serveraddr.sin_family = AF_INET;
+  bcopy((char *)server->h_addr,
+  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+  serveraddr.sin_port = htons(receiver_port);
+	serverlen = sizeof(serveraddr);
+
+	/*
 	char myAddr[100];
 	struct sockaddr_in bindAddr;
 	sprintf(myAddr, "127.0.0.1");
@@ -117,7 +138,7 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
 	memset(&receiver, 0, sizeof(receiver));
 	receiver.sin_family = AF_INET;
 	receiver.sin_port = htons(receiver_port);
-	inet_pton(AF_INET, receiver_hostname, &receiver.sin_addr);
+	inet_pton(AF_INET, receiver_hostname, &receiver.sin_addr);*/
 }
 
 int main(int argc, char** argv)
@@ -141,4 +162,4 @@ int main(int argc, char** argv)
 
 	pthread_t receiveAcksThread;
 	pthread_create(&receiveAcksThread, 0, receiveAcks, (void*)0);
-} 
+}
