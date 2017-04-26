@@ -20,12 +20,12 @@ int sequence_base = 0;
 int sequence_max;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
 pthread_mutex_t mtx;
+pthread_cond_t cv;
 int numberOfFrames;
 
 typedef struct Frame {
 	char buf[1472];
   int sequence_number;
-	// char * data;
 } frame;
 
 void* receiveAcks(void * unusedParam) {
@@ -43,6 +43,7 @@ void* receiveAcks(void * unusedParam) {
 		}
 		printf("Received an ACK\n");
 		sendFlag = 0;
+		pthread_cond_signal(&cv);
 		if(request_number == numberOfFrames) {
 			pthread_mutex_unlock(&mtx);
 			break;
@@ -73,32 +74,34 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	}
 
 	while(1) {
-		if(sendFlag == 0) {
-			pthread_mutex_lock(&mtx);
-			if(sequence_base == numberOfFrames)
-			{
-				pthread_mutex_unlock(&mtx);
-				break;
-			}
-			if(sequence_max > (numberOfFrames-1))
-				sequence_max = (numberOfFrames-1);
-			i = sequence_base;
-			for(; i <= sequence_max; i++) {
-				printf("%d %d %d\n", sequence_base, allFrames[i].sequence_number, sequence_max);
-				// Transmit the packet
-				if(lastPacketSize != -1 && i != (numberOfFrames - 1)) {
-					fread(allFrames[i].buf+sizeof(int),1,numBytesToRead,file);
-					printf("Sending...\n");
-					sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
-				} else {
-					fread(allFrames[i].buf+sizeof(int),1,lastPacketSize,file);
-					printf("Sending...\n");
-					sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
-				}
-			}
-			sendFlag = 1;
-			pthread_mutex_unlock(&mtx);
+		pthread_mutex_lock(&mtx);
+		while(sendFlag == 1) {
+			pthread_cond_wait(&cv, &mtx);
 		}
+
+		if(sequence_base == numberOfFrames)
+		{
+			pthread_mutex_unlock(&mtx);
+			break;
+		}
+		if(sequence_max > (numberOfFrames-1))
+			sequence_max = (numberOfFrames-1);
+		i = sequence_base;
+		for(; i <= sequence_max; i++) {
+			//printf("%d %d %d\n", sequence_base, allFrames[i].sequence_number, sequence_max);
+			// Transmit the packet
+			if(lastPacketSize != -1 && i != (numberOfFrames - 1)) {
+				fread(allFrames[i].buf+sizeof(int),1,numBytesToRead,file);
+				printf("Sending...\n");
+				sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+			} else {
+				fread(allFrames[i].buf+sizeof(int),1,lastPacketSize,file);
+				printf("Sending...\n");
+				sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+			}
+		}
+		sendFlag = 1;
+		pthread_mutex_unlock(&mtx);
 	}
 
 	printf("%s\n", "Successfuly transferred file!");
@@ -135,6 +138,7 @@ int main(int argc, char** argv)
 	sequence_max = WINDOW_SIZE - 1;
 
 	pthread_mutex_init(&mtx, NULL);
+	pthread_cond_init(&cv, NULL);
 
 	if(argc != 5)
 	{
