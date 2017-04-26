@@ -103,7 +103,9 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		sendFlag = 1;
 		pthread_mutex_unlock(&mtx);
 	}
-
+	char buf[6];
+	strcpy(buf, "~Stop");
+	sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 	printf("%s\n", "Successfuly transferred file!");
 	fclose(file);
 }

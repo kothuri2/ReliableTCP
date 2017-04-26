@@ -40,6 +40,11 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 	FILE * fd = fopen(destinationFile, "w");
 	while (1) {
 		bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
+		if(strcmp(((char*)recData),"~Stop") == 0) {
+			fclose(fd);
+			printf("%s\n", "Successfully Received File");
+			return;
+		}
 		frame * newFrame = malloc(FRAME_SIZE);
 		newFrame->sequence_num = *((int *)(recData));
 		newFrame->data = (char*)(recData + sizeof(int));
