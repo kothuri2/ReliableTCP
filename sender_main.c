@@ -19,20 +19,18 @@ struct hostent *server;
 int globalSocketUDP;
 int WINDOW_SIZE = 4;
 int PAYLOAD_SIZE = 1472;
-#define DATA_SIZE  (PAYLOAD_SIZE-sizeof(int))
-
 //struct sockaddr_in receiver;
 int sequence_base = 0;
 int sequence_max;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
-pthread_mutex_t sendFlagMutex;
+pthread_mutex_t mtx;
 int numberOfFrames;
 typedef struct Frame {
 	int sequence_number;
-	char data[1468];
+	char * data;
 } frame;
 
-void receiveAck() {
+void* receiveAcks(void * unusedParam) {
 	//struct sockaddr_in theirAddr;
 	//socklen_t theirAddrLen;
 	unsigned char recvBuf [8];
@@ -40,25 +38,21 @@ void receiveAck() {
 
 	while(1) {
 		//theirAddrLen = sizeof(theirAddr);
-		printf("%s\n", "hi");
 		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
 		//Received an ACK
-		printf("%s\n", "h2");
-		void* request_number = malloc(sizeof(int));
-		strncpy(request_number, recvBuf, sizeof(int));
-		if (*((int*)request_number) > sequence_base) {
-			sequence_max = (sequence_max - sequence_base) + *((int*)request_number);
-			printf("request_number: %d\n", *((int*)request_number));
-			sequence_base = *((int*)request_number);
-		}
-
-		if(request_number == numberOfFrames) {
-			break;
+		int request_number = *((int *) recvBuf);
+		pthread_mutex_lock(&mtx);
+		if (request_number > sequence_base) {
+			sequence_max = (sequence_max - sequence_base) + request_number;
+			sequence_base = request_number;
 		}
 		printf("Received an ACK\n");
-		pthread_mutex_lock(&sendFlagMutex);
 		sendFlag = 0;
-		pthread_mutex_unlock(&sendFlagMutex);
+		if(request_number == numberOfFrames) {
+			pthread_mutex_unlock(&mtx);
+			break;
+		}
+		pthread_mutex_unlock(&mtx);
 	}
 }
 
@@ -66,74 +60,59 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	//sendto(globalSocketUDP, "hello", 6, 0, (struct sockaddr*)&receiver, sizeof(receiver));
 	int numBytesToRead = PAYLOAD_SIZE - sizeof(int);
 	numberOfFrames = bytesToTransfer/(numBytesToRead);
+	int lastPacketSize = -1;
 	if(bytesToTransfer%numBytesToRead != 0)
+	{
 		numberOfFrames++;
+		lastPacketSize = bytesToTransfer - ((numberOfFrames-1)*numBytesToRead);
+	}
 
-	if(bytesToTransfer < numBytesToRead)
-		numberOfFrames = 1;
-	int lastPacketSize = bytesToTransfer - (numberOfFrames*numBytesToRead);
 	FILE * file = fopen(filename, "r");
 	frame allFrames [numberOfFrames];
 	int acks [numberOfFrames];
 	int i;
-	if(bytesToTransfer < numBytesToRead) {
-		numberOfFrames = 1;
-		lastPacketSize = bytesToTransfer;
-		allFrames[0].sequence_number = 0;
-		allFrames[0].data = calloc(1,lastPacketSize);
-		acks[0] = 0;
-	} else {
-		for (i = 0; i < numberOfFrames; i++) {
-			allFrames[i].sequence_number = i;
-			allFrames[i].data = calloc(1,numBytesToRead);
-			acks[i] = 0;
-		}
+	for (i = 0; i < numberOfFrames; i++) {
+		allFrames[i].sequence_number = i;
+		allFrames[i].data = calloc(1,numBytesToRead);
+		acks[i] = 0;
 	}
 
-	int whileflag = 1;
-	while(whileflag) {
-		//printf("%d\n", 1);
+	while(1) {
 		if(sendFlag == 0) {
+			pthread_mutex_lock(&mtx);
+			if(sequence_base == numberOfFrames)
+			{
+				pthread_mutex_unlock(&mtx);
+				break;
+			}
+			if(sequence_max > (numberOfFrames-1))
+				sequence_max = (numberOfFrames-1);
 			i = sequence_base;
 			for(; i <= sequence_max; i++) {
-				if(i == (numberOfFrames)) {
-					printf("%s\n", "in");
-					whileflag = 0;
-					break;
-				}
-				printf("%d %d %d\n", sequence_base, allFrames[i]->sequence_number, sequence_max);
-				if(sequence_base <= allFrames[i]->sequence_number && allFrames[i]->sequence_number <= sequence_max) {
-					// Transmit the packet
-					if(i != (numberOfFrames - 1)) {
-						fread(allFrames[i]->data,1,numBytesToRead,file);
-					} else {
-						fread(allFrames[i]->data,1,lastPacketSize,file);
+				printf("%d %d %d\n", sequence_base, allFrames[i].sequence_number, sequence_max);
+				// Transmit the packet
+				if(lastPacketSize != -1 && i != (numberOfFrames - 1)) {
+					fread(allFrames[i].data,1,numBytesToRead,file);
+					printf("Sending...\n");
+					sendto(globalSocketUDP, ((const void *) &allFrames[i]), numBytesToRead+sizeof(int), 0, (struct sockaddr*)&serveraddr, serverlen);
+				} else {
+					fread(allFrames[i].data,1,lastPacketSize,file);
+					char buf [sizeof(int) + strlen(allFrames[i].data)];
+					memcpy(buf, &(allFrames[i].sequence_number), sizeof(int));
+					for(i = 0; i < lastPacketSize; i++) {
+						buf[i + sizeof(int)] = allFrames[sequence_base].data[i];
 					}
-					printf("Sending... %s\n", allFrames[i]->data);
-					sendto(globalSocketUDP, ((const void *)allFrames[i]), sizeof(frame), 0, (struct sockaddr*)&serveraddr, serverlen);
+					printf("Sending...\n");
+					sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
 			sendFlag = 1;
-
-
-			receiveAck();
-
-			//pthread_mutex_lock(&sendFlagMutex);
-			//pthread_mutex_unlock(&sendFlagMutex);
+			pthread_mutex_unlock(&mtx);
 		}
 	}
 
-	fread(allFrames[sequence_base].data,1,lastPacketSize,file);
-	char buf [sizeof(int) + strlen(allFrames[sequence_base].data)];
-	memcpy(buf, &(allFrames[sequence_base].sequence_number), sizeof(allFrames[sequence_base].sequence_number));
-	for(i = 0; i <= strlen(allFrames[sequence_base].data); i++) {
-		buf[i + sizeof(int)] = allFrames[sequence_base].data[i];
-	}
-	printf("%s\n",buf+sizeof(int));
-	sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 	printf("%s\n", "Successfuly transferred file!");
 	fclose(file);
-
 }
 
 void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_port) {
@@ -165,21 +144,20 @@ int main(int argc, char** argv)
 	unsigned long long int numBytes;
 	sequence_max = WINDOW_SIZE - 1;
 
-	pthread_mutex_init(&sendFlagMutex, NULL);
+	pthread_mutex_init(&mtx, NULL);
 
 	if(argc != 5)
 	{
 		fprintf(stderr, "usage: %s receiver_hostname receiver_port filename_to_xfer bytes_to_xfer\n\n", argv[0]);
 		exit(1);
 	}
-	// pthread_t receiveAcksThread;
-	// pthread_create(&receiveAcksThread, 0, receiveAcks, (void*)0);
+
 	udpPort = (unsigned short int)atoi(argv[2]);
 	setUpPortInfo((const char *)argv[1], udpPort);
 	numBytes = atoll(argv[4]);
 
-	// pthread_t receiveAcksThread;
-	// pthread_create(&receiveAcksThread, 0, receiveAcks, (void*)0);
+	pthread_t receiveAcksThread;
+	pthread_create(&receiveAcksThread, 0, receiveAcks, (void*)0);
 
 	reliablyTransfer(argv[1], udpPort, argv[3], numBytes);
 
