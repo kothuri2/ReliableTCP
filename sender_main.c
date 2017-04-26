@@ -10,34 +10,29 @@
 #include <pthread.h>
 #include <netdb.h>
 
-//int sockfd, portno, n;
 int serverlen;
 struct sockaddr_in serveraddr;
 struct hostent *server;
-//char *hostname;
-
 int globalSocketUDP;
 int WINDOW_SIZE = 4;
 int PAYLOAD_SIZE = 1472;
-//struct sockaddr_in receiver;
 int sequence_base = 0;
 int sequence_max;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
 pthread_mutex_t mtx;
 int numberOfFrames;
+
 typedef struct Frame {
-	int sequence_number;
-	char * data;
+	char buf[1472];
+  int sequence_number;
+	// char * data;
 } frame;
 
 void* receiveAcks(void * unusedParam) {
-	//struct sockaddr_in theirAddr;
-	//socklen_t theirAddrLen;
 	unsigned char recvBuf [8];
 	int bytesRecvd;
 
 	while(1) {
-		//theirAddrLen = sizeof(theirAddr);
 		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
 		//Received an ACK
 		int request_number = *((int *) recvBuf);
@@ -56,8 +51,8 @@ void* receiveAcks(void * unusedParam) {
 	}
 }
 
-void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* filename, unsigned long long int bytesToTransfer) {
-	//sendto(globalSocketUDP, "hello", 6, 0, (struct sockaddr*)&receiver, sizeof(receiver));
+void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* filename, unsigned long long int bytesToTransfer)
+{
 	int numBytesToRead = PAYLOAD_SIZE - sizeof(int);
 	numberOfFrames = bytesToTransfer/(numBytesToRead);
 	int lastPacketSize = -1;
@@ -73,7 +68,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	int i;
 	for (i = 0; i < numberOfFrames; i++) {
 		allFrames[i].sequence_number = i;
-		allFrames[i].data = calloc(1,numBytesToRead);
+		memcpy(allFrames[i].buf, &(allFrames[i].sequence_number), sizeof(int));
 		acks[i] = 0;
 	}
 
@@ -92,18 +87,13 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 				printf("%d %d %d\n", sequence_base, allFrames[i].sequence_number, sequence_max);
 				// Transmit the packet
 				if(lastPacketSize != -1 && i != (numberOfFrames - 1)) {
-					fread(allFrames[i].data,1,numBytesToRead,file);
+					fread(allFrames[i].buf+sizeof(int),1,numBytesToRead,file);
 					printf("Sending...\n");
-					sendto(globalSocketUDP, ((const void *) &allFrames[i]), numBytesToRead+sizeof(int), 0, (struct sockaddr*)&serveraddr, serverlen);
+					sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
-					fread(allFrames[i].data,1,lastPacketSize,file);
-					char buf [sizeof(int) + strlen(allFrames[i].data)];
-					memcpy(buf, &(allFrames[i].sequence_number), sizeof(int));
-					for(i = 0; i < lastPacketSize; i++) {
-						buf[i + sizeof(int)] = allFrames[sequence_base].data[i];
-					}
+					fread(allFrames[i].buf+sizeof(int),1,lastPacketSize,file);
 					printf("Sending...\n");
-					sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+					sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
 			sendFlag = 1;
