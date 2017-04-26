@@ -42,16 +42,16 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 		bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
 		frame * newFrame = malloc(FRAME_SIZE);
 		newFrame->sequence_num = *((int *)(recData));
-		newFrame->data = ((char*)(recData + sizeof(int)));
+		newFrame->data = (char*)(recData + sizeof(int));
 		if(newFrame->sequence_num == request_number) {
 			fwrite(newFrame->data, 1, strlen(newFrame->data), fd);
 			fflush(fd);
 			request_number = request_number + 1;
 		}
+		printf("server received %d %s\n", newFrame->sequence_num, newFrame->data);
 		hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
 	    hostaddrp = inet_ntoa(clientaddr.sin_addr);
-	    printf("server received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-		sendto(sockfd, "hello", strlen("hello"), 0, (struct sockaddr*)&clientaddr, clientlen);
+		sendto(sockfd, ((const void *) &request_number), sizeof(request_number), 0, (struct sockaddr*)&clientaddr, clientlen);
 		free(newFrame);
 	}
 
