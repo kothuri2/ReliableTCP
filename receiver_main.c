@@ -29,8 +29,9 @@ struct hostent *hostp; /* client host info */
 char *hostaddrp; /* dotted decimal host addr string */
 int optval; /* flag value for setsockopt */
 socklen_t sendersize;
-int request_number = 0;
+int request_number = -1;
 int bytesRecvd;
+unsigned long long int bytesToWrite;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
@@ -38,26 +39,38 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 	unsigned char recData [FRAME_SIZE];
 	FILE * fd = fopen(destinationFile, "w");
-	while (1) {
-		bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
-		if(strcmp(((char*)recData),"~Stop") == 0) {
+	while (1)
+	{
+		if(bytesToWrite == 0) {
 			fclose(fd);
 			printf("%s\n", "Successfully Received File");
 			return;
 		}
-		frame * newFrame = malloc(FRAME_SIZE);
-		newFrame->sequence_num = *((int *)(recData));
-		newFrame->data = (char*)(recData + sizeof(int));
-		if(newFrame->sequence_num == request_number) {
-			fwrite(newFrame->data, 1, strlen(newFrame->data), fd);
-			fflush(fd);
-			request_number = request_number + 1;
+		bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
+		if(request_number == -1) {
+			int sequence_num = *((int *)(recData));
+			if(sequence_num == request_number) {
+				bytesToWrite = *((unsigned long long int*)(recData+sizeof(int)));
+				request_number++;
+			}
+		} else {
+			frame * newFrame = malloc(FRAME_SIZE);
+			newFrame->sequence_num = *((int *)(recData));
+			newFrame->data = (char*)(recData + sizeof(int));
+			if(newFrame->sequence_num == request_number)
+			{
+				fwrite(newFrame->data, 1, bytesRecvd-sizeof(int), fd);
+				fflush(fd);
+				bytesToWrite = ((int)bytesToWrite) - (bytesRecvd-(int)sizeof(int));
+				request_number++;
+			}
+			printf("server received %d %s\n", newFrame->sequence_num, newFrame->data);
+			free(newFrame);
 		}
-		printf("server received %d %s\n", newFrame->sequence_num, newFrame->data);
+		//
 		hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-	    hostaddrp = inet_ntoa(clientaddr.sin_addr);
-		sendto(sockfd, ((const void *) &request_number), sizeof(request_number), 0, (struct sockaddr*)&clientaddr, clientlen);
-		free(newFrame);
+    hostaddrp = inet_ntoa(clientaddr.sin_addr);
+		sendto(sockfd, ((const void *) &request_number), sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 	}
 
 }
@@ -67,9 +80,9 @@ void setUpPortInfo(unsigned short int my_port) {
 	optval = 1;
 	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(int));
 	bzero((char *) &serveraddr, sizeof(serveraddr));
-  	serveraddr.sin_family = AF_INET;
-  	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  	serveraddr.sin_port = htons((unsigned short)my_port);
+	serveraddr.sin_family = AF_INET;
+	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	serveraddr.sin_port = htons((unsigned short)my_port);
 	bind(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr));
 	clientlen = sizeof(clientaddr);
 }
@@ -77,6 +90,7 @@ void setUpPortInfo(unsigned short int my_port) {
 int main(int argc, char** argv)
 {
 	unsigned short int udpPort;
+	bytesToWrite = -1;
 
 	if(argc != 3)
 	{

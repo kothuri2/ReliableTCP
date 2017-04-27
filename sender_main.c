@@ -16,7 +16,7 @@ struct hostent *server;
 int globalSocketUDP;
 int WINDOW_SIZE = 4;
 int PAYLOAD_SIZE = 1472;
-int sequence_base = 0;
+int sequence_base;
 int sequence_max;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
 pthread_mutex_t mtx;
@@ -75,9 +75,8 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 
 	while(1) {
 		pthread_mutex_lock(&mtx);
-		while(sendFlag == 1) {
+		while(sendFlag == 1)
 			pthread_cond_wait(&cv, &mtx);
-		}
 
 		if(sequence_base == numberOfFrames)
 		{
@@ -90,22 +89,29 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		for(; i <= sequence_max; i++) {
 			//printf("%d %d %d\n", sequence_base, allFrames[i].sequence_number, sequence_max);
 			// Transmit the packet
-			if(lastPacketSize != -1 && i != (numberOfFrames - 1)) {
+			if(i == -1) {
+				char buf[sizeof(unsigned long long int)+sizeof(int)];
+				memcpy(buf, &i, sizeof(int));
+				memcpy(buf+sizeof(int), &bytesToTransfer, sizeof(unsigned long long int));
+				printf("%llu\n", bytesToTransfer);
+				sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+			} else if(lastPacketSize != -1 && i != (numberOfFrames - 1)) {
+				printf("%s\n", "here");
 				fread(allFrames[i].buf+sizeof(int),1,numBytesToRead,file);
 				printf("Sending...\n");
 				sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 			} else {
 				fread(allFrames[i].buf+sizeof(int),1,lastPacketSize,file);
 				printf("Sending...\n");
-				sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+				sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 			}
 		}
 		sendFlag = 1;
 		pthread_mutex_unlock(&mtx);
 	}
-	char buf[6];
-	strcpy(buf, "~Stop");
-	sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+	// char buf[6];
+	// strcpy(buf, "~Stop");
+	// sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 	printf("%s\n", "Successfuly transferred file!");
 	fclose(file);
 }
@@ -124,11 +130,11 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
 	}
 
 	/* build the server's Internet address */
-  	bzero((char *) &serveraddr, sizeof(serveraddr));
-  	serveraddr.sin_family = AF_INET;
-  	bcopy((char *)server->h_addr,
-  	(char *)&serveraddr.sin_addr.s_addr, server->h_length);
-  	serveraddr.sin_port = htons(receiver_port);
+	bzero((char *) &serveraddr, sizeof(serveraddr));
+	serveraddr.sin_family = AF_INET;
+	bcopy((char *)server->h_addr,
+	(char *)&serveraddr.sin_addr.s_addr, server->h_length);
+	serveraddr.sin_port = htons(receiver_port);
 	serverlen = sizeof(serveraddr);
 
 }
@@ -137,7 +143,8 @@ int main(int argc, char** argv)
 {
 	unsigned short int udpPort;
 	unsigned long long int numBytes;
-	sequence_max = WINDOW_SIZE - 1;
+	sequence_max = WINDOW_SIZE - 2;
+	sequence_base = -1;
 
 	pthread_mutex_init(&mtx, NULL);
 	pthread_cond_init(&cv, NULL);
