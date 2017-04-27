@@ -41,7 +41,7 @@ void* receiveAcks(void * unusedParam) {
 			sequence_max = (sequence_max - sequence_base) + request_number;
 			sequence_base = request_number;
 		}
-		printf("Received an ACK\n");
+		printf("Received an ACK for packet %d of %d\n", request_number, numberOfFrames);
 		sendFlag = 0;
 		pthread_cond_signal(&cv);
 		if(request_number == numberOfFrames) {
@@ -101,21 +101,21 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 			if(i == 0) {
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
 					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, lastPacketSize, file);
-					printf("Sending...\n");
+					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
 					sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
 					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, firstBytesToRead, file);
-					printf("Sending...\n");
+					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
 					sendto(globalSocketUDP, allFrames[i].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			} else {
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
 					fread(allFrames[i].buf+sizeof(int), 1, lastPacketSize, file);
-					printf("Sending...\n");
+					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
 					sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
 					fread(allFrames[i].buf+sizeof(int), 1, numBytesToRead, file);
-					printf("Sending...\n");
+					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
 					sendto(globalSocketUDP, allFrames[i].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
