@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -16,17 +17,43 @@ struct hostent *server;
 int globalSocketUDP;
 int WINDOW_SIZE = 4;
 int PAYLOAD_SIZE = 1472;
+double TIMEOUT_WINDOW = 100.0;
 int sequence_base;
 int sequence_max;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
 pthread_mutex_t mtx;
 pthread_cond_t cv;
 int numberOfFrames;
-
 typedef struct Frame {
 	char buf[1472];
-  int sequence_number;
+  	int sequence_number;
+  	struct timeval lastSent;
 } frame;
+frame * allFrames;
+
+void* timeout(void * unusedParam) {
+	while(1) {
+		// Iterate through current window and see if any packets have timed out
+		// If any packet has timed out, resend entire window
+		int i = sequence_base;
+		for(; i <= sequence_max; i++) {
+			if(allFrames[i].lastSent.tv_sec != -1) {
+				struct timeval currentTime;
+				gettimeofday(&currentTime, 0);
+				double elapsed_time = (currentTime.tv_sec - allFrames[i].lastSent.tv_sec) * 1000.0;
+				elapsed_time += (currentTime.tv_usec - allFrames[i].lastSent.tv_usec) / 1000.0;
+				if(elapsed_time >= TIMEOUT_WINDOW) {
+					// Did not receive ACK, resend the entire window
+					printf("Packet %d timed out\n", allFrames[i].sequence_number);
+					int j = sequence_base;
+					for (; j <= sequence_max; j++) {
+						sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+					}
+				}
+			}
+		}
+	}
+}
 
 void* receiveAcks(void * unusedParam) {
 	unsigned char recvBuf [8];
@@ -70,8 +97,10 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		lastPacketSize = bytesToTransfer;
 	}
 
+	allFrames = malloc(numberOfFrames*(sizeof(frame)));
+
+	//Initialize the frames;
 	FILE * file = fopen(filename, "r");
-	frame allFrames [numberOfFrames];
 	int acks [numberOfFrames];
 	int i;
 	for (i = 0; i < numberOfFrames; i++) {
@@ -79,8 +108,12 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		memcpy(allFrames[i].buf, &(allFrames[i].sequence_number), sizeof(int));
 		if(i == 0)
 			memcpy(allFrames[i].buf+sizeof(int), &bytesToTransfer, sizeof(unsigned long long int));
+		allFrames[i].lastSent.tv_sec = -1;
 		acks[i] = 0;
 	}
+
+	pthread_t timeoutThread;
+	pthread_create(&timeoutThread, 0, timeout, (void*)0);
 
 	while(1) {
 		pthread_mutex_lock(&mtx);
@@ -102,20 +135,24 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
 					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, lastPacketSize, file);
 					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
+					gettimeofday(&allFrames[i].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
 					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, firstBytesToRead, file);
 					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
+					gettimeofday(&allFrames[i].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			} else {
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
 					fread(allFrames[i].buf+sizeof(int), 1, lastPacketSize, file);
 					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
+					gettimeofday(&allFrames[i].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
 					fread(allFrames[i].buf+sizeof(int), 1, numBytesToRead, file);
 					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
+					gettimeofday(&allFrames[i].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
