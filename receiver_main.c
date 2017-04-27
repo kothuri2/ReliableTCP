@@ -29,7 +29,7 @@ struct hostent *hostp; /* client host info */
 char *hostaddrp; /* dotted decimal host addr string */
 int optval; /* flag value for setsockopt */
 socklen_t sendersize;
-int request_number = -1;
+int request_number = 0;
 int bytesRecvd;
 unsigned long long int bytesToWrite;
 
@@ -47,12 +47,19 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			return;
 		}
 		bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
-		if(request_number == -1) {
-			int sequence_num = *((int *)(recData));
-			if(sequence_num == request_number) {
+		if(request_number == 0) {
+			frame * newFrame = malloc(FRAME_SIZE);
+			newFrame->sequence_num = *((int *)(recData));
+			if(newFrame->sequence_num == request_number) {
 				bytesToWrite = *((unsigned long long int*)(recData+sizeof(int)));
+				newFrame->data = (char*)(recData+sizeof(int)+sizeof(unsigned long long int));
+				fwrite(newFrame->data, 1, bytesRecvd-sizeof(int)-sizeof(unsigned long long int), fd);
+				fflush(fd);
+				bytesToWrite = ((int)bytesToWrite) - (bytesRecvd-(int)sizeof(int)-(int)sizeof(unsigned long long int));
 				request_number++;
 			}
+			printf("server received %d %s\n", newFrame->sequence_num, newFrame->data);
+			free(newFrame);
 		} else {
 			frame * newFrame = malloc(FRAME_SIZE);
 			newFrame->sequence_num = *((int *)(recData));
@@ -67,7 +74,6 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			printf("server received %d %s\n", newFrame->sequence_num, newFrame->data);
 			free(newFrame);
 		}
-		//
 		hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
     hostaddrp = inet_ntoa(clientaddr.sin_addr);
 		sendto(sockfd, ((const void *) &request_number), sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);

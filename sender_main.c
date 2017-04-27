@@ -55,12 +55,19 @@ void* receiveAcks(void * unusedParam) {
 void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* filename, unsigned long long int bytesToTransfer)
 {
 	int numBytesToRead = PAYLOAD_SIZE - sizeof(int);
-	numberOfFrames = bytesToTransfer/(numBytesToRead);
+	int firstBytesToRead = numBytesToRead - sizeof(unsigned long long int);
 	int lastPacketSize = -1;
-	if(bytesToTransfer%numBytesToRead != 0)
-	{
-		numberOfFrames++;
-		lastPacketSize = bytesToTransfer - ((numberOfFrames-1)*numBytesToRead);
+	if(bytesToTransfer > firstBytesToRead) {
+		numberOfFrames = (bytesToTransfer-firstBytesToRead)/numBytesToRead + 1;
+		if((bytesToTransfer-firstBytesToRead)%numBytesToRead != 0)
+		{
+			lastPacketSize = bytesToTransfer - firstBytesToRead - ((numberOfFrames-1)*numBytesToRead);
+			numberOfFrames++;
+		}
+	}
+	else {
+		numberOfFrames = 1;
+		lastPacketSize = bytesToTransfer;
 	}
 
 	FILE * file = fopen(filename, "r");
@@ -70,6 +77,8 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	for (i = 0; i < numberOfFrames; i++) {
 		allFrames[i].sequence_number = i;
 		memcpy(allFrames[i].buf, &(allFrames[i].sequence_number), sizeof(int));
+		if(i == 0)
+			memcpy(allFrames[i].buf+sizeof(int), &bytesToTransfer, sizeof(unsigned long long int));
 		acks[i] = 0;
 	}
 
@@ -89,29 +98,32 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		for(; i <= sequence_max; i++) {
 			//printf("%d %d %d\n", sequence_base, allFrames[i].sequence_number, sequence_max);
 			// Transmit the packet
-			if(i == -1) {
-				char buf[sizeof(unsigned long long int)+sizeof(int)];
-				memcpy(buf, &i, sizeof(int));
-				memcpy(buf+sizeof(int), &bytesToTransfer, sizeof(unsigned long long int));
-				printf("%llu\n", bytesToTransfer);
-				sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
-			} else if(lastPacketSize != -1 && i != (numberOfFrames - 1)) {
-				printf("%s\n", "here");
-				fread(allFrames[i].buf+sizeof(int),1,numBytesToRead,file);
-				printf("Sending...\n");
-				sendto(globalSocketUDP, allFrames[i].buf, sizeof(allFrames[i].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+			if(i == 0) {
+				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
+					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, lastPacketSize, file);
+					printf("Sending...\n");
+					sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
+				} else {
+					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, firstBytesToRead, file);
+					printf("Sending...\n");
+					sendto(globalSocketUDP, allFrames[i].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
+				}
 			} else {
-				fread(allFrames[i].buf+sizeof(int),1,lastPacketSize,file);
-				printf("Sending...\n");
-				sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
+				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
+					fread(allFrames[i].buf+sizeof(int), 1, lastPacketSize, file);
+					printf("Sending...\n");
+					sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
+				} else {
+					fread(allFrames[i].buf+sizeof(int), 1, numBytesToRead, file);
+					printf("Sending...\n");
+					sendto(globalSocketUDP, allFrames[i].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
+				}
 			}
 		}
 		sendFlag = 1;
 		pthread_mutex_unlock(&mtx);
 	}
-	// char buf[6];
-	// strcpy(buf, "~Stop");
-	// sendto(globalSocketUDP, buf, sizeof(buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+
 	printf("%s\n", "Successfuly transferred file!");
 	fclose(file);
 }
@@ -143,8 +155,8 @@ int main(int argc, char** argv)
 {
 	unsigned short int udpPort;
 	unsigned long long int numBytes;
-	sequence_max = WINDOW_SIZE - 2;
-	sequence_base = -1;
+	sequence_max = WINDOW_SIZE - 1;
+	sequence_base = 0;
 
 	pthread_mutex_init(&mtx, NULL);
 	pthread_cond_init(&cv, NULL);
