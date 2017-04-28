@@ -18,9 +18,10 @@ int serverlen;
 struct sockaddr_in serveraddr;
 struct hostent *server;
 int globalSocketUDP;
-double TIMEOUT_WINDOW = 50.0;
-int sequence_base;
-int sequence_max;
+double TIMEOUT_WINDOW = 1000.0;
+
+unsigned long long int sequence_base;
+unsigned long long int sequence_max;
 int maxposs;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
 pthread_mutex_t mtx;
@@ -64,24 +65,9 @@ void* receiveAcks(void * unusedParam) {
 		//Received an ACK
 		int request_number = *((int *) recvBuf);
 		pthread_mutex_lock(&mtx);
-		if((sequence_base+(WINDOW_SIZE-1)) > maxposs) {
-			if(sequence_base<=request_number<=maxposs) {
-				numberOfFrames -= (request_number - sequence_base);
-				sequence_base = request_number;
-				sequence_max = (request_number+(WINDOW_SIZE-1))%(maxposs+1);
-			} else {
-				numberOfFrames -= (((maxposs+1)-sequence_base)+1);
-				numberOfFrames -= request_number;
-				sequence_base = request_number;
-				sequence_max = (request_number+(WINDOW_SIZE-1))%(maxposs+1);
-			}
-		} else {
-			if(sequence_base <= request_number <= sequence_max) {
-				//printf("NumFrames: %d\n", numberOfFrames);
-				numberOfFrames -= (request_number-sequence_base);
-				sequence_base = request_number;
-				sequence_max = (request_number+(WINDOW_SIZE-1))%(maxposs+1);
-			}
+		if (request_number >= sequence_base) {
+			sequence_max = (sequence_max - sequence_base) + request_number;
+			sequence_base = request_number;
 		}
 
 		printf("Received an ACK for packet %d of %d\n", request_number, numberOfFrames);
@@ -113,19 +99,10 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		lastPacketSize = bytesToTransfer;
 	}
 
-	allFrames = malloc(numberOfFrames*(sizeof(frame)));
-
 	//Initialize the frames;
 	FILE * file = fopen(filename, "r");
-	frame allFrames [maxposs+1];
+	frame allFrames [WINDOW_SIZE];
 	int acks [numberOfFrames];
-	int firstflag = 1;
-	int i;
-	for (i = 0; i <= maxposs; i++) {
-		allFrames[i].sequence_number = i;
-		memcpy(allFrames[i].buf, &(allFrames[i].sequence_number), sizeof(int));
-		allFrames[i].lastSent.tv_sec = -1;
-	}
 
 	pthread_t timeoutThread;
 	pthread_create(&timeoutThread, 0, timeout, (void*)0);
@@ -135,48 +112,46 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		while(sendFlag == 1)
 			pthread_cond_wait(&cv, &mtx);
 
-		if(numberOfFrames == 0)
+		if(sequence_base == numberOfFrames)
 		{
 			pthread_mutex_unlock(&mtx);
 			break;
 		}
-		int stopind = sequence_max;
-		if(numberOfFrames < (WINDOW_SIZE-1))
-			stopind = (sequence_base + (numberOfFrames-1))%(maxposs+1);
-		i = sequence_base;
-		for(; i <= (i+(WINDOW_SIZE-1)); i++) {
+		if(sequence_max > (numberOfFrames-1))
+			sequence_max = numberOfFrames-1;
+		unsigned long long int i = sequence_base;
+		for(; i <= sequence_max; i++) {
 			// Transmit the packet
-			if(firstflag) {
-				if(numberOfFrames == 1 && lastPacketSize != -1) {
-					memcpy(allFrames[i].buf+sizeof(int), &bytesToTransfer, sizeof(unsigned long long int));
-					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, lastPacketSize, file);
+			allFrames[i%WINDOW_SIZE].lastSent.tv_sec = -1;
+			memcpy(allFrames[i%WINDOW_SIZE].buf, &i, sizeof(unsigned long long int));
+			if(i == 0) {
+				memcpy(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long long int), &bytesToTransfer, sizeof(unsigned long long int));
+				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
+					fread(allFrames[i].buf+sizeof(unsigned long long int)+sizeof(unsigned long long int), 1, lastPacketSize, file);
 					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
-					gettimeofday(&allFrames[i].lastSent, 0);
-					sendto(globalSocketUDP, allFrames[i].buf, sizeof(int)+sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
+					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
+					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, sizeof(unsigned long long int)+sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
-					memcpy(allFrames[i].buf+sizeof(int), &bytesToTransfer, sizeof(unsigned long long int));
-					fread(allFrames[i].buf+sizeof(int)+sizeof(unsigned long long int), 1, firstBytesToRead, file);
-					printf("Sending packet %d of %d\n", allFrames[i].sequence_number, numberOfFrames);
-					gettimeofday(&allFrames[i].lastSent, 0);
-					sendto(globalSocketUDP, allFrames[i].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
+					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(int)+sizeof(unsigned long long int), 1, firstBytesToRead, file);
+					printf("Sending packet %d of %d\n", allFrames[i%WINDOW_SIZE].sequence_number, numberOfFrames);
+					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
+					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
-				firstflag = 0;
 			} else {
-				if(numberOfFrames == 1 && lastPacketSize != -1) {
-					fread(allFrames[i%(maxposs+1)].buf+sizeof(int), 1, lastPacketSize, file);
-					printf("Sending packet %d of %d\n", allFrames[i%(maxposs+1)].sequence_number, numberOfFrames);
-					gettimeofday(&allFrames[i%(maxposs+1)].lastSent, 0);
-					sendto(globalSocketUDP, allFrames[i%(maxposs+1)].buf, sizeof(int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
+				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
+					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long long int), 1, lastPacketSize, file);
+					printf("Sending packet %d of %d\n", allFrames[i%WINDOW_SIZE].sequence_number, numberOfFrames);
+					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
+					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
-					fread(allFrames[i%(maxposs+1)].buf+sizeof(int), 1, numBytesToRead, file);
-					printf("Sending packet %d of %d\n", allFrames[i%(maxposs+1)].sequence_number, numberOfFrames);
-					gettimeofday(&allFrames[i%(maxposs+1)].lastSent, 0);
-					sendto(globalSocketUDP, allFrames[i%(maxposs+1)].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
+					fread(allFrames[i%(maxposs+1)].buf+sizeof(unsigned long long int), 1, numBytesToRead, file);
+					printf("Sending packet %d of %d\n", allFrames[i%WINDOW_SIZE].sequence_number, numberOfFrames);
+					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
+					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
-			if(i%(maxposs+1) == stopind)
-				break;
 		}
+		resendAcks();
 		sendFlag = 1;
 		pthread_mutex_unlock(&mtx);
 	}
