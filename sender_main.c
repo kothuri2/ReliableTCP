@@ -36,18 +36,18 @@ void* timeout(void * unusedParam) {
 	while(1) {
 		// Iterate through current window and see if any packets have timed out
 		// If any packet has timed out, resend entire window
-		int i = sequence_base;
-		for(; i <= i+(WINDOW_SIZE-1); i++) {
-			if(allFrames[i%(maxposs+1)].lastSent.tv_sec != -1) {
+		unsigned long i = sequence_base;
+		for(; i <= i+sequence_max; i++) {
+			if(allFrames[i%WINDOW_SIZE].lastSent.tv_sec != -1) {
 				struct timeval currentTime;
 				gettimeofday(&currentTime, 0);
-				double elapsed_time = (currentTime.tv_sec - allFrames[i%(maxposs+1)].lastSent.tv_sec) * 1000.0;
-				elapsed_time += (currentTime.tv_usec - allFrames[i%(maxposs+1)].lastSent.tv_usec) / 1000.0;
+				double elapsed_time = (currentTime.tv_sec - allFrames[i%WINDOW_SIZE].lastSent.tv_sec) * 1000.0;
+				elapsed_time += (currentTime.tv_usec - allFrames[i%WINDOW_SIZE].lastSent.tv_usec) / 1000.0;
 				if(elapsed_time >= TIMEOUT_WINDOW) {
 					// Did not receive ACK, resend the entire window
-					printf("Packet %d timed out\n", allFrames[i].sequence_number);
-					int j = sequence_base;
-					sendto(globalSocketUDP, allFrames[j%(maxposs+1)].buf, sizeof(allFrames[j%(maxposs+1)].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
+					printf("Packet %d timed out\n", allFrames[i%WINDOW_SIZE].sequence_number);
+					unsigned long j = sequence_base;
+					sendto(globalSocketUDP, allFrames[j%WINDOW_SIZE].buf, sizeof(allFrames[j%WINDOW_SIZE].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
 		}
