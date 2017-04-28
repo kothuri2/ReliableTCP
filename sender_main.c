@@ -39,13 +39,14 @@ void* timeout(void * unusedParam) {
 		unsigned long i = sequence_base;
 		for(; i <= sequence_max; i++) {
 			if(allFrames[i%WINDOW_SIZE].lastSent.tv_sec != -1) {
+				printf("inside here\n");
 				struct timeval currentTime;
 				gettimeofday(&currentTime, 0);
 				double elapsed_time = (currentTime.tv_sec - allFrames[i%WINDOW_SIZE].lastSent.tv_sec) * 1000.0;
 				elapsed_time += (currentTime.tv_usec - allFrames[i%WINDOW_SIZE].lastSent.tv_usec) / 1000.0;
 				if(elapsed_time >= TIMEOUT_WINDOW) {
 					// Did not receive ACK, resend the entire window
-					printf("Packet %d timed out\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf));
+					printf("Packet %lu timed out\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf));
 					unsigned long j = sequence_base;
 					sendto(globalSocketUDP, allFrames[j%WINDOW_SIZE].buf, sizeof(allFrames[j%WINDOW_SIZE].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
@@ -63,12 +64,16 @@ void* receiveAcks(void * unusedParam) {
 		//Received an ACK
 		unsigned long request_number = *((unsigned long *) recvBuf);
 		pthread_mutex_lock(&mtx);
+		
+		//struct timeval currentTime;
+		//gettimeofday(&allFrames[(request_number-1)%WINDOW_SIZE].lastSent, 0, 0);
+		
 		if (request_number >= sequence_base) {
 			sequence_max = (sequence_max - sequence_base) + request_number;
 			sequence_base = request_number;
 		}
-
-		printf("Received an ACK for packet %d of %d\n", request_number, numberOfFrames);
+		
+		printf("Received an ACK for packet %lu of %lu\n", request_number, numberOfFrames);
 		sendFlag = 0;
 		pthread_cond_signal(&cv);
 		if(request_number == numberOfFrames) {
@@ -125,30 +130,29 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 				memcpy(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), &bytesToTransfer, sizeof(unsigned long long int));
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
 					fread(allFrames[i].buf+sizeof(unsigned long)+sizeof(unsigned long long int), 1, lastPacketSize, file);
-					printf("Sending packet %d of %d\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
 					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, sizeof(unsigned long)+sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
 					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(int)+sizeof(unsigned long), 1, firstBytesToRead, file);
-					printf("Sending packet %d of %d\n",*((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					printf("Sending packet %lu of %lu\n",*((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
 					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			} else {
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
 					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), 1, lastPacketSize, file);
-					printf("Sending packet %d of %d\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
 					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, sizeof(unsigned long)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
 				} else {
 					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), 1, numBytesToRead, file);
-					printf("Sending packet %d of %d\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
 					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
 					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, PAYLOAD_SIZE, 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
 		}
-		resendAcks();
 		sendFlag = 1;
 		pthread_mutex_unlock(&mtx);
 	}

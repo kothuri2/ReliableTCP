@@ -51,7 +51,6 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			}
 			bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
 			frame * newFrame = malloc(FRAME_SIZE);
-			int datasize;
 			newFrame->sequence_num = *((int *)(recData));
 			int datasize = 0;
 			if(newFrame->sequence_num == 0) {
@@ -72,7 +71,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			}
 			free(newFrame);
 			hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-	    hostaddrp = inet_ntoa(clientaddr.sin_addr);
+	    	hostaddrp = inet_ntoa(clientaddr.sin_addr);
 			sendto(sockfd, ((const void *) &request_number), sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 		}
 		fwrite(recDataBuffer, 1, WINDOW_SIZE*FRAME_SIZE, fd);
