@@ -30,7 +30,6 @@ char *hostaddrp; /* dotted decimal host addr string */
 int optval; /* flag value for setsockopt */
 socklen_t sendersize;
 int request_number = 0;
-int maxposs = 8;
 int firstflag = 1;
 int bytesRecvd;
 unsigned long long int bytesToWrite;
@@ -100,6 +99,7 @@ int main(int argc, char** argv)
 {
 	unsigned short int udpPort;
 	bytesToWrite = -1;
+	maxposs = 2*WINDOW_SIZE;
 
 	if(argc != 3)
 	{
