@@ -11,10 +11,9 @@
 #include <netdb.h>
 #include <fcntl.h>
 
-#define RWS 1
-#define MAX_SEQ_NO 16
 #define FRAME_SIZE 1472
 #define DATA_SIZE (FRAME_SIZE - sizeof(int))
+#define WINDOW_SIZE 4
 
 typedef struct Frame {
 	int sequence_num;
@@ -30,6 +29,7 @@ char *hostaddrp; /* dotted decimal host addr string */
 int optval; /* flag value for setsockopt */
 socklen_t sendersize;
 int request_number = 0;
+int maxposs;
 int firstflag = 1;
 int bytesRecvd;
 unsigned long long int bytesToWrite;
@@ -39,46 +39,58 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 	printf("%s\n", "Waiting for sender...");
 
 	unsigned char recData [FRAME_SIZE];
+	unsigned char recWindowBuffer [(WINDOW_SIZE)*DATA_SIZE];
 	FILE * fd = fopen(destinationFile, "w");
 	while (1)
 	{
-		if(bytesToWrite == 0) {
-			fclose(fd);
-			printf("%s\n", "Successfully Received File");
-			return;
-		}
-		bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
-		if(firstflag) {
+		int i=0;
+		for(; i<WINDOW_SIZE; i++)
+		{
+			if(bytesToWrite == 0) {
+				fclose(fd);
+				printf("%s\n", "Successfully Received File");
+				return;
+			}
+
+			bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
 			frame * newFrame = malloc(FRAME_SIZE);
+			int datasize;
 			newFrame->sequence_num = *((int *)(recData));
-			if(newFrame->sequence_num == request_number) {
+			if(firstflag) {
 				bytesToWrite = *((unsigned long long int*)(recData+sizeof(int)));
+				datasize = bytesRecvd-(int)sizeof(int)-(int)sizeof(unsigned long long int);
+				bytesToWrite = ((int)bytesToWrite) - datasize;
 				newFrame->data = (char*)(recData+sizeof(int)+sizeof(unsigned long long int));
-				fwrite(newFrame->data, 1, bytesRecvd-sizeof(int)-sizeof(unsigned long long int), fd);
-				fflush(fd);
-				bytesToWrite = ((int)bytesToWrite) - (bytesRecvd-(int)sizeof(int)-(int)sizeof(unsigned long long int));
-				printf("%llu\n", bytesToWrite);
-				request_number = (request_number+1)%(maxposs+1);
+				firstflag = 0;
+			} else {
+				newFrame->data = (char*)(recData + sizeof(int));
+				datasize = bytesRecvd-(int)sizeof(int);
+				bytesToWrite = ((int)bytesToWrite) - datasize;
 			}
+			// Packet came out of order
+			// Don't discard just write to buffer in order
+			//Just write to buffer in order
+			int order;
+			// 1, 7
+			if(newFrame->sequence_num < request_number) {
+				order = ((maxposs+1)-request_number) + newFrame->sequence_num;
+			} else {
+				order = ((newFrame->sequence_num) - (request_number));
+				if(newFrame->sequence_num == request_number) {
+					request_number = (request_number + 1)%(maxposs + 1);
+				}
+			}
+			memcpy(recWindowBuffer + (order * DATA_SIZE), newFrame->data, datasize);
 			printf("Server received packet %d\n", newFrame->sequence_num);
 			free(newFrame);
-		} else {
-			frame * newFrame = malloc(FRAME_SIZE);
-			newFrame->sequence_num = *((int *)(recData));
-			newFrame->data = (char*)(recData + sizeof(int));
-			if(newFrame->sequence_num == request_number)
-			{
-				fwrite(newFrame->data, 1, bytesRecvd-sizeof(int), fd);
-				fflush(fd);
-				bytesToWrite = ((int)bytesToWrite) - (bytesRecvd-(int)sizeof(int));
-				request_number = (request_number+1)%(maxposs+1);
-			}
-			printf("Server received packet %d\n", newFrame->sequence_num);
-			free(newFrame);
+
+			hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
+	    	hostaddrp = inet_ntoa(clientaddr.sin_addr);
+			sendto(sockfd, ((const void *) &request_number), sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 		}
-		hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-    hostaddrp = inet_ntoa(clientaddr.sin_addr);
-		sendto(sockfd, ((const void *) &request_number), sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
+		fwrite(recWindowBuffer, 1, sizeof(recWindowBuffer), fd);
+		fflush(fd);
+		request_number =
 	}
 
 }

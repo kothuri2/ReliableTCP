@@ -11,13 +11,14 @@
 #include <pthread.h>
 #include <netdb.h>
 
+#define WINDOW_SIZE 4
+#define PAYLOAD_SIZE 1472
+
 int serverlen;
 struct sockaddr_in serveraddr;
 struct hostent *server;
 int globalSocketUDP;
-int WINDOW_SIZE = 4;
-int PAYLOAD_SIZE = 1472;
-double TIMEOUT_WINDOW = 100.0;
+double TIMEOUT_WINDOW = 50.0;
 int sequence_base;
 int sequence_max;
 int maxposs;
@@ -26,7 +27,7 @@ pthread_mutex_t mtx;
 pthread_cond_t cv;
 int numberOfFrames;
 typedef struct Frame {
-	char buf[1472];
+	char buf[PAYLOAD_SIZE];
   	int sequence_number;
   	struct timeval lastSent;
 } frame;
@@ -47,9 +48,7 @@ void* timeout(void * unusedParam) {
 					// Did not receive ACK, resend the entire window
 					printf("Packet %d timed out\n", allFrames[i].sequence_number);
 					int j = sequence_base;
-					for (; j <= j+(WINDOW_SIZE-1); j++) {
-						sendto(globalSocketUDP, allFrames[j%(maxposs+1)].buf, sizeof(allFrames[j%(maxposs+1)].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
-					}
+					sendto(globalSocketUDP, allFrames[j%(maxposs+1)].buf, sizeof(allFrames[j%(maxposs+1)].buf), 0, (struct sockaddr*)&serveraddr, serverlen);
 				}
 			}
 		}
@@ -64,7 +63,6 @@ void* receiveAcks(void * unusedParam) {
 		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
 		//Received an ACK
 		int request_number = *((int *) recvBuf);
-//		printf("reqNum: %d\n", request_number);
 		pthread_mutex_lock(&mtx);
 		if((sequence_base+(WINDOW_SIZE-1)) > maxposs) {
 			if(sequence_base<=request_number<=maxposs) {
