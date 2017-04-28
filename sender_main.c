@@ -37,7 +37,7 @@ void* timeout(void * unusedParam) {
 		// Iterate through current window and see if any packets have timed out
 		// If any packet has timed out, resend entire window
 		unsigned long i = sequence_base;
-		for(; i <= i+sequence_max; i++) {
+		for(; i <= sequence_max; i++) {
 			if(allFrames[i%WINDOW_SIZE].lastSent.tv_sec != -1) {
 				struct timeval currentTime;
 				gettimeofday(&currentTime, 0);
