@@ -17,7 +17,7 @@ struct hostent *server;
 int globalSocketUDP;
 int WINDOW_SIZE = 4;
 int PAYLOAD_SIZE = 1472;
-double TIMEOUT_WINDOW = 100.0;
+double TIMEOUT_WINDOW = 1000.0;
 int sequence_base;
 int sequence_max;
 int sendFlag = 0; // send when sendFlag is 0, don't send when 1
@@ -64,7 +64,7 @@ void* receiveAcks(void * unusedParam) {
 		//Received an ACK
 		int request_number = *((int *) recvBuf);
 		pthread_mutex_lock(&mtx);
-		if (request_number > sequence_base) {
+		if (request_number >= sequence_base) {
 			sequence_max = (sequence_max - sequence_base) + request_number;
 			sequence_base = request_number;
 		}
@@ -157,6 +157,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 				}
 			}
 		}
+		resendAcks();
 		sendFlag = 1;
 		pthread_mutex_unlock(&mtx);
 	}
