@@ -19,6 +19,7 @@ struct sockaddr_in serveraddr;
 struct hostent *server;
 int globalSocketUDP;
 double TIMEOUT_WINDOW = 1000.0;
+struct timeval ackTimer;
 
 unsigned long sequence_base;
 unsigned long sequence_max;
@@ -29,9 +30,8 @@ unsigned long numberOfFrames;
 
 typedef struct Frame {
 	unsigned char buf[PAYLOAD_SIZE];
-    struct timeval lastSent;
+  struct timeval lastSent;
 } frame;
-
 
 frame * allFrames;
 
@@ -39,6 +39,7 @@ void* timeout(void * unusedParam) {
 	while(1) {
 		// Iterate through current window and see if any packets have timed out
 		// If any packet has timed out, resend entire window
+		pthread_mutex_lock(&mtx);
 		unsigned long i = sequence_base;
 		for(; i <= sequence_max; i++) {
 			if(allFrames[i%WINDOW_SIZE].lastSent.tv_sec != -1) {
@@ -54,19 +55,31 @@ void* timeout(void * unusedParam) {
 				}
 			}
 		}
+		pthread_mutex_unlock(&mtx);
 	}
 }
 
 void* receiveAcks(void * unusedParam) {
 	unsigned char recvBuf [8];
 	int bytesRecvd;
+	int firstack = 1;
 
 	while(1) {
-		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
-		//Received an ACK
-		unsigned long request_number = *((unsigned long *) recvBuf);
 		pthread_mutex_lock(&mtx);
 
+		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
+		if(bytesRecvd == -1) {
+			sendFlag = 0;
+			pthread_mutex_unlock(&mtx);
+			continue;
+		}
+		//Received an ACK
+		unsigned long request_number = *((unsigned long *) recvBuf);
+
+		if(firstack) {
+			gettimeofday(&ackTimer, 0);
+			firstack = 0;
+		}
 		//struct timeval currentTime;
 		//gettimeofday(&allFrames[(request_number-1)%WINDOW_SIZE].lastSent, 0, 0);
 
@@ -76,9 +89,10 @@ void* receiveAcks(void * unusedParam) {
 		}
 
 		printf("Received an ACK for packet %lu of %lu\n", request_number, numberOfFrames);
-		sendFlag = 0;
 		pthread_cond_signal(&cv);
 		if(request_number == numberOfFrames) {
+			//printf("%s\n", "why not quitting");
+			sendFlag = 0;
 			pthread_mutex_unlock(&mtx);
 			break;
 		}
@@ -166,14 +180,21 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 
 	printf("%s\n", "Successfuly transferred file!");
 	fclose(file);
+	exit(0);
 }
 
 void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_port) {
+
 	if((globalSocketUDP=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
 	{
 		perror("socket");
 		exit(1);
 	}
+
+	struct timeval read_timeout;
+	read_timeout.tv_sec = 0;
+	read_timeout.tv_usec = 10;
+	setsockopt(globalSocketUDP, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout));
 
 	server = gethostbyname(receiver_hostname);
 	if(server == NULL) {
@@ -197,6 +218,7 @@ int main(int argc, char** argv)
 	unsigned long long int numBytes;
 	sequence_max = WINDOW_SIZE-1;
 	sequence_base = 0;
+	ackTimer.tv_sec = -1;
 
 	pthread_mutex_init(&mtx, NULL);
 	pthread_cond_init(&cv, NULL);
