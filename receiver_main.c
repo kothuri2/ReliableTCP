@@ -16,9 +16,14 @@
 #define WINDOW_SIZE 4
 
 typedef struct Frame {
-	int sequence_num;
+	unsigned long sequence_num;
 	char* data;
 } frame;
+
+typedef struct Data {
+	char* buffer;
+	int size;
+} data;
 
 int sockfd; /* socket */
 int clientlen; /* byte size of client's address */
@@ -28,54 +33,82 @@ struct hostent *hostp; /* client host info */
 char *hostaddrp; /* dotted decimal host addr string */
 int optval; /* flag value for setsockopt */
 socklen_t sendersize;
-int request_number = 0;
-int maxposs;
+int request_number;
+int numneeded;
 int bytesRecvd;
-unsigned long long int bytesToWrite;
+unsigned long long int bytesToWrite = -1;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 	printf("%s\n", "Waiting for sender...");
 
-	unsigned char recData [FRAME_SIZE];
-	unsigned char recDataBuffer [WINDOW_SIZE * FRAME_SIZE];
+	//unsigned char recData [FRAME_SIZE];
+	//unsigned char recDataBuffer [WINDOW_SIZE * FRAME_SIZE];
 	FILE * fd = fopen(destinationFile, "w");
-	while (1)
+	while(1)
 	{
-		int i = 0;
-		for(; i < WINDOW_SIZE; i++) {
+		data* recDataBuffer = malloc(WINDOW_SIZE * sizeof(data));
+		int i;
+		for(i = 0; i < WINDOW_SIZE; i++)
+			recDataBuffer[i].buffer = NULL;
+		numneeded = WINDOW_SIZE;
+		while(1) {
 			if(bytesToWrite == 0) {
+				for(i = 0; i < WINDOW_SIZE; i++) {
+					if(recDataBuffer[i].buffer != NULL) {
+						fwrite(recDataBuffer[i].buffer, 1, recDataBuffer[i].size, fd);
+						fflush(fd);
+						free(recDataBuffer[i].buffer);
+					}
+				}
+				free(recDataBuffer);
 				fclose(fd);
 				printf("%s\n", "Successfully Received File");
 				return;
 			}
+
+			if(numneeded == 0)
+				break;
+			char recData[FRAME_SIZE];
 			bytesRecvd = recvfrom(sockfd, recData, FRAME_SIZE, 0, (struct sockaddr*)&clientaddr, &clientlen);
 			frame * newFrame = malloc(FRAME_SIZE);
-			newFrame->sequence_num = *((int *)(recData));
+			newFrame->sequence_num = *((unsigned long *)(recData));
+			printf("%lu\n", newFrame->sequence_num);
+			int order = (newFrame->sequence_num)%(WINDOW_SIZE);
+			if(recDataBuffer[order].buffer != NULL)
+				continue;
+			printf("%s\n", "waddupppp");
+			numneeded--;
 			int datasize = 0;
 			if(newFrame->sequence_num == 0) {
-				bytesToWrite = *((unsigned long long int*)(recData+sizeof(int)));
-				bytesToWrite = ((int)bytesToWrite) - (bytesRecvd-(int)sizeof(int)-(int)sizeof(unsigned long long int));
-				newFrame->data = (char*)(recData+sizeof(int)+sizeof(unsigned long long int));
-				datasize = (bytesRecvd-(int)sizeof(int)-(int)sizeof(unsigned long long int));
+				bytesToWrite = *((unsigned long long int*)(recData+sizeof(unsigned long)));
+				datasize = (bytesRecvd-sizeof(unsigned long)-sizeof(unsigned long long int));
+				bytesToWrite = bytesToWrite - datasize;
+				newFrame->data = (char*)(recData+sizeof(unsigned long)+sizeof(unsigned long long int));
 			} else {
-				newFrame->data = (char*)(recData+sizeof(int));
-				bytesToWrite = ((int)bytesToWrite) - (bytesRecvd-(int)sizeof(int));
-				datasize = (bytesRecvd-(int)sizeof(int));
+				newFrame->data = (char*)(recData+sizeof(unsigned long));
+				datasize = (bytesRecvd-sizeof(unsigned long));
+				bytesToWrite = bytesToWrite - datasize;
 			}
-			int order = (newFrame->sequence_num) % (WINDOW_SIZE);
-			memcpy(recDataBuffer + (order * WINDOW_SIZE), newFrame->data, datasize);
-			printf("Server received packet %d\n", newFrame->sequence_num);
+			recDataBuffer[order].buffer = strdup(newFrame->data);
+			recDataBuffer[order].size = datasize;
+			//memcpy(recDataBuffer, newFrame->data, datasize);
+			printf("Server received packet %lu\n", newFrame->sequence_num);
 			if(newFrame->sequence_num == request_number) {
 				request_number++;
 			}
 			free(newFrame);
 			hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-	    	hostaddrp = inet_ntoa(clientaddr.sin_addr);
+	    hostaddrp = inet_ntoa(clientaddr.sin_addr);
 			sendto(sockfd, ((const void *) &request_number), sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 		}
-		fwrite(recDataBuffer, 1, WINDOW_SIZE*FRAME_SIZE, fd);
-		fflush(fd);
+		for(i = 0; i < WINDOW_SIZE; i++) {
+			fwrite(recDataBuffer[i].buffer, 1, recDataBuffer[i].size, fd);
+			fflush(fd);
+			free(recDataBuffer[i].buffer);
+		}
+		free(recDataBuffer);
+		numneeded = WINDOW_SIZE;
 	}
 
 }
@@ -96,7 +129,7 @@ int main(int argc, char** argv)
 {
 	unsigned short int udpPort;
 	bytesToWrite = -1;
-	maxposs = 2*WINDOW_SIZE;
+	request_number = 0;
 
 	if(argc != 3)
 	{

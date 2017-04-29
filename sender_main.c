@@ -26,10 +26,13 @@ int sendFlag = 0; // send when sendFlag is 0, don't send when 1
 pthread_mutex_t mtx;
 pthread_cond_t cv;
 unsigned long numberOfFrames;
+
 typedef struct Frame {
 	char buf[PAYLOAD_SIZE];
   struct timeval lastSent;
 } frame;
+
+
 frame * allFrames;
 
 void* timeout(void * unusedParam) {
@@ -39,7 +42,6 @@ void* timeout(void * unusedParam) {
 		unsigned long i = sequence_base;
 		for(; i <= sequence_max; i++) {
 			if(allFrames[i%WINDOW_SIZE].lastSent.tv_sec != -1) {
-				printf("inside here\n");
 				struct timeval currentTime;
 				gettimeofday(&currentTime, 0);
 				double elapsed_time = (currentTime.tv_sec - allFrames[i%WINDOW_SIZE].lastSent.tv_sec) * 1000.0;
@@ -64,15 +66,15 @@ void* receiveAcks(void * unusedParam) {
 		//Received an ACK
 		unsigned long request_number = *((unsigned long *) recvBuf);
 		pthread_mutex_lock(&mtx);
-		
+
 		//struct timeval currentTime;
 		//gettimeofday(&allFrames[(request_number-1)%WINDOW_SIZE].lastSent, 0, 0);
-		
+
 		if (request_number >= sequence_base) {
 			sequence_max = (sequence_max - sequence_base) + request_number;
 			sequence_base = request_number;
 		}
-		
+
 		printf("Received an ACK for packet %lu of %lu\n", request_number, numberOfFrames);
 		sendFlag = 0;
 		pthread_cond_signal(&cv);
@@ -84,8 +86,7 @@ void* receiveAcks(void * unusedParam) {
 	}
 }
 
-void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* filename, unsigned long long int bytesToTransfer)
-{
+void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* filename, unsigned long long int bytesToTransfer) {
 	int numBytesToRead = PAYLOAD_SIZE - sizeof(unsigned long);
 	int firstBytesToRead = numBytesToRead - sizeof(unsigned long long int);
 	int lastPacketSize = -1;
@@ -104,7 +105,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 
 	//Initialize the frames;
 	FILE * file = fopen(filename, "r");
-	frame allFrames [WINDOW_SIZE];
+  allFrames = malloc(WINDOW_SIZE*sizeof(frame));
 
 	pthread_t timeoutThread;
 	pthread_create(&timeoutThread, 0, timeout, (void*)0);
@@ -113,7 +114,6 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		pthread_mutex_lock(&mtx);
 		while(sendFlag == 1)
 			pthread_cond_wait(&cv, &mtx);
-
 		if(sequence_base == numberOfFrames)
 		{
 			pthread_mutex_unlock(&mtx);
@@ -126,13 +126,17 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 			// Transmit the packet
 			allFrames[i%WINDOW_SIZE].lastSent.tv_sec = -1;
 			memcpy(allFrames[i%WINDOW_SIZE].buf, &i, sizeof(unsigned long));
+
 			if(i == 0) {
 				memcpy(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), &bytesToTransfer, sizeof(unsigned long long int));
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
-					fread(allFrames[i].buf+sizeof(unsigned long)+sizeof(unsigned long long int), 1, lastPacketSize, file);
+					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), 1, lastPacketSize, file);
+					printf("hi");
 					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
 					gettimeofday(&allFrames[i%WINDOW_SIZE].lastSent, 0);
+
 					sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, sizeof(unsigned long)+sizeof(unsigned long long int)+lastPacketSize, 0, (struct sockaddr*)&serveraddr, serverlen);
+
 				} else {
 					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(int)+sizeof(unsigned long), 1, firstBytesToRead, file);
 					printf("Sending packet %lu of %lu\n",*((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
