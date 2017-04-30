@@ -33,25 +33,25 @@ struct hostent *hostp; /* client host info */
 char *hostaddrp; /* dotted decimal host addr string */
 int optval; /* flag value for setsockopt */
 socklen_t sendersize;
-unsigned long request_number;
+//unsigned long request_number;
 int numneeded;
 int bytesRecvd;
-unsigned long long int bytesToWrite = -1;
+unsigned long long int bytesToWrite;
+long sequence_base;
+long sequence_max;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
 	printf("%s\n", "Waiting for sender...");
-
-	//unsigned char recData [FRAME_SIZE];
-	//unsigned char recDataBuffer [WINDOW_SIZE * FRAME_SIZE];
 	FILE * fd = fopen(destinationFile, "w");
 	while(1)
 	{
 		data* recDataBuffer = malloc(WINDOW_SIZE * sizeof(data));
+		int receivedMap[WINDOW_SIZE];
 		int i;
 		for(i = 0; i < WINDOW_SIZE; i++)
-			recDataBuffer[i].buffer = NULL;
-		numneeded = WINDOW_SIZE;
+			receivedMap[i] = 0;
+		//numneeded = WINDOW_SIZE;
 		while(1) {
 			if(bytesToWrite == 0) {
 				for(i = 0; i < WINDOW_SIZE; i++) {
@@ -127,7 +127,9 @@ int main(int argc, char** argv)
 {
 	unsigned short int udpPort;
 	bytesToWrite = -1;
-	request_number = 0;
+	//request_number = 0;
+	sequence_base = 0;
+	sequence_max = WINDOW_SIZE-1;
 
 	if(argc != 3)
 	{
