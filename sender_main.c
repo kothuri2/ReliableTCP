@@ -10,6 +10,8 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <netdb.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define WINDOW_SIZE 4
 #define PAYLOAD_SIZE 1472
@@ -28,6 +30,7 @@ pthread_mutex_t mtx;
 pthread_cond_t cv;
 pthread_cond_t ackcv;
 unsigned long numberOfFrames;
+unsigned long numLeft;
 
 typedef struct Frame {
 	unsigned char buf[PAYLOAD_SIZE];
@@ -37,7 +40,7 @@ typedef struct Frame {
 frame * allFrames;
 
 void* receiveAcks(void * unusedParam) {
-	unsigned char recvBuf [8];
+	unsigned char recvBuf [sizeof(int) + WINDOW_SIZE*sizeof(unsigned long)];
 	int bytesRecvd;
 	int firstack = 1;
 
@@ -56,15 +59,19 @@ void* receiveAcks(void * unusedParam) {
 		//Received an ACK
 		int numToSend = *((int*)recvBuf);
 		if(numToSend == 0) {
-			printf("Received a Complete ACK");
+			printf("Received a Complete ACK\n");
+			numLeft -= ((sequence_max - sequence_base)+1);
 			sequence_base = sequence_max + 1;
 			sequence_max = sequence_base + (WINDOW_SIZE-1);
-			sendflag = 0;
+			if(sequence_max >= numberOfFrames)
+				sequence_max = numberOfFrames-1;
+			sendFlag = 0;
 			pthread_cond_signal(&cv);
-			if(sequence_base == numberOfFrames) {
+			if(numLeft == 0) {
 				pthread_mutex_unlock(&mtx);
 				break;
 			}
+			pthread_mutex_unlock(&mtx);
 			continue;
 		}
 		printf("Received a Request ACK");
@@ -95,51 +102,50 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		numberOfFrames = 1;
 		lastPacketSize = bytesToTransfer;
 	}
+	numLeft = numberOfFrames;
 
 	//Initialize the frames;
-	FILE * file = fopen(filename, "r");
-  allFrames = malloc(WINDOW_SIZE*sizeof(frame));
+	int fd = open(filename, O_RDONLY);
+	int fdcheck = open("senderTest.txt", O_WRONLY | O_APPEND | O_TRUNC | O_CREAT);
 
-	pthread_t timeoutThread;
-	pthread_create(&timeoutThread, 0, timeout, (void*)0);
+  allFrames = malloc(WINDOW_SIZE*sizeof(frame));
 
 	while(1) {
 		pthread_mutex_lock(&mtx);
 		while(sendFlag == 1)
 			pthread_cond_wait(&cv, &mtx);
-		if(sequence_base == numberOfFrames)
+		if(numLeft == 0)
 		{
 			pthread_mutex_unlock(&mtx);
 			break;
 		}
-		if(sequence_max > (numberOfFrames-1))
-			sequence_max = numberOfFrames-1;
 		unsigned long i = sequence_base;
 		for(; i <= sequence_max; i++) {
 			// Transmit the packet
 			memcpy(allFrames[i%WINDOW_SIZE].buf, &i, sizeof(unsigned long));
 			if(i == 0) {
-				unsigned long long int * bytesTemp = malloc(sizeof(unsigned long long int));
-				*bytesTemp = bytesToTransfer;
-				printf("%llu\n",*bytesTemp);
-				memcpy(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), bytesTemp, sizeof(unsigned long long int));
+				memcpy(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), &bytesToTransfer, sizeof(unsigned long long int));
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
-					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), 1, lastPacketSize, file);
-					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), lastPacketSize);
+					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), lastPacketSize);
+					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
 					allFrames[i%WINDOW_SIZE].size = sizeof(unsigned long)+sizeof(unsigned long long int)+lastPacketSize;
 				} else {
-					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), 1, firstBytesToRead, file);
-					printf("Sending packet %lu of %lu\n",*((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), firstBytesToRead);
+					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), firstBytesToRead);
+					printf("Sending packet %lu of %lu\n",*((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
 					allFrames[i%WINDOW_SIZE].size = PAYLOAD_SIZE;
 				}
 			} else {
 				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
-					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), 1, lastPacketSize, file);
-					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), lastPacketSize);
+					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), lastPacketSize);
+					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
 					allFrames[i%WINDOW_SIZE].size = sizeof(unsigned long)+lastPacketSize;
 				} else {
-					fread(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), 1, numBytesToRead, file);
-					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf), numberOfFrames);
+					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), numBytesToRead);
+					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), numBytesToRead);
+					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
 					allFrames[i%WINDOW_SIZE].size = PAYLOAD_SIZE;
 				}
 			}
@@ -151,7 +157,7 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 	}
 
 	printf("%s\n", "Successfuly transferred file!");
-	fclose(file);
+	close(fd);
 	exit(0);
 }
 
