@@ -31,6 +31,7 @@ pthread_cond_t cv;
 pthread_cond_t ackcv;
 unsigned long numberOfFrames;
 unsigned long numLeft;
+int again = 0;
 int resendFlag = 0;
 
 typedef struct Frame {
@@ -62,8 +63,19 @@ void* receiveAcks(void * unusedParam) {
 		int numToSend = *((int*)recvBuf);
 		if(numToSend == 0) {
 			unsigned long recSeqBase = *((unsigned long *)(recvBuf+sizeof(int)));
-			printf("Received a Cumulative ACK %lu\n", recSeqBase);
+			//printf("Received a Cumulative ACK %lu\n", recSeqBase);
+			if(numberOfFrames%WINDOW_SIZE == 1 && recSeqBase == (numberOfFrames-1)) {
+				if(again) {
+					numLeft--;
+					sendFlag = 0;
+					resendFlag = 0;
+					pthread_cond_signal(&cv);
+					pthread_mutex_unlock(&mtx);
+					break;
+				}
+				again = 1;
 
+			}
 			if(recSeqBase > sequence_base) {
 				numLeft -= ((sequence_max - sequence_base)+1);
 				sequence_base = recSeqBase;
