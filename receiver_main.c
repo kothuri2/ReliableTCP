@@ -30,10 +30,10 @@ int optval; /* flag value for setsockopt */
 socklen_t sendersize;
 int bytesRecvd;
 unsigned long long int bytesToWrite;
-long sequence_base;
-long sequence_max;
-long startind;
-long endind;
+unsigned long sequence_base;
+unsigned long sequence_max;
+unsigned long startind;
+unsigned long endind;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
@@ -84,7 +84,8 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			if(sequence_num < sequence_base || sequence_num > sequence_max || receivedMap[order] != 0) {
 				reqNum = 0;
 				memcpy(ackBuf, &reqNum, sizeof(int));
-				memcpy(ackBuf, &sequence_base, sizeof(unsigned long));
+				memcpy(ackBuf + sizeof(int), &sequence_base, sizeof(unsigned long));
+				printf("%lu\n", sequence_base);
 				sendto(sockfd, ackBuf, sizeof(unsigned long)+sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 				i--;
 				continue;
@@ -114,7 +115,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 				free(recDataBuffer[i].buffer);
 			}
 			sequence_base = sequence_max + 1;
-			memcpy(ackBuf, &sequence_base, sizeof(unsigned long));
+			memcpy(ackBuf + sizeof(int), &sequence_base, sizeof(unsigned long));
 			sequence_max = sequence_base + (WINDOW_SIZE - 1);
 			startind = 0;
 			endind = WINDOW_SIZE;

@@ -50,7 +50,7 @@ void* receiveAcks(void * unusedParam) {
 		while(sendFlag == 0)
 			pthread_cond_wait(&ackcv, &mtx);
 
-		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
+		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, sizeof(int) + WINDOW_SIZE*sizeof(unsigned long), 0, (struct sockaddr*)&serveraddr, &serverlen);
 		if(bytesRecvd == -1) {
 			resendFlag = 1;
 			sendFlag = 0;
@@ -61,9 +61,10 @@ void* receiveAcks(void * unusedParam) {
 		//Received an ACK
 		int numToSend = *((int*)recvBuf);
 		if(numToSend == 0) {
-			unsigned long recSeqBase = *((unsigned long*)(recvBuf+sizeof(int)));
+			unsigned long recSeqBase = *((unsigned long *)(recvBuf+sizeof(int)));
+			printf("Received a Cumulative ACK %lu\n", recSeqBase);
+
 			if(recSeqBase > sequence_base) {
-				//printf("Received a Cumulative ACK");
 				numLeft -= ((sequence_max - sequence_base)+1);
 				sequence_base = recSeqBase;
 				sequence_max = sequence_base + (WINDOW_SIZE-1);
@@ -82,7 +83,7 @@ void* receiveAcks(void * unusedParam) {
 		}
 		int i;
 		for(i = 0; i < numToSend; i++) {
-			long reqNum = *((unsigned long *)(recvBuf + sizeof(int)));
+			unsigned long reqNum = *((unsigned long *)(recvBuf + sizeof(int)));
 			//printf("Resending Packet %lu", reqNum);
 			sendto(globalSocketUDP, allFrames[reqNum%WINDOW_SIZE].buf, allFrames[reqNum%WINDOW_SIZE].size, 0, (struct sockaddr*)&serveraddr, serverlen);
 		}
