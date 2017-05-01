@@ -13,7 +13,7 @@
 
 #define FRAME_SIZE 1472
 #define DATA_SIZE (FRAME_SIZE - sizeof(int))
-#define WINDOW_SIZE 4
+#define WINDOW_SIZE 20
 
 typedef struct Data {
 	char* buffer;

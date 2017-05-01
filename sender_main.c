@@ -13,7 +13,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define WINDOW_SIZE 4
+#define WINDOW_SIZE 20
 #define PAYLOAD_SIZE 1472
 
 int serverlen;
