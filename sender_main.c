@@ -64,7 +64,7 @@ void* receiveAcks(void * unusedParam) {
 		int numToSend = *((int*)recvBuf);
 		if(numToSend == 0) {
 			unsigned long recSeqBase = *((unsigned long *)(recvBuf+sizeof(int)));
-			//printf("Received a Cumulative ACK %lu\n", recSeqBase);
+			printf("Received a Cumulative ACK %lu\n", recSeqBase);
 			if(recSeqBase == numberOfFrames) {
 				sendFlag = 0;
 				resendFlag = 0;

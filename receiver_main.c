@@ -123,7 +123,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 				bytesToWrite -= datasize;
 				recDataBuffer[order].buffer = strdup((char*)(recData+sizeof(unsigned long)));
 			}
-			//printf("Received Packet %lu\n", sequence_num);
+			printf("Received Packet %lu\n", sequence_num);
 			recDataBuffer[order].size = datasize;
 			receivedMap[order] = 1;
 			hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
