@@ -39,7 +39,7 @@ unsigned long numberOfFrames;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
-	int fd = open(destinationFile, O_RDWR | O_APPEND | O_TRUNC | O_CREAT, 0666);
+	int fd = fopen(destinationFile, "w");
 	data* recDataBuffer = malloc(WINDOW_SIZE * sizeof(data));
 	int i;
 	int receivedMap[WINDOW_SIZE];
@@ -59,7 +59,8 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 				sendto(sockfd, ackBuf, sizeof(int)+sizeof(unsigned long), 0, (struct sockaddr*)&clientaddr, clientlen);
 				for(i = 0; i < WINDOW_SIZE; i++) {
 					if(receivedMap[i] != 0) {
-						write(fd, recDataBuffer[i].buffer, recDataBuffer[i].size);
+						fwrite(recDataBuffer[i].buffer,1, recDataBuffer[i].size, fd);
+						fflush(fd);
 						free(recDataBuffer[i].buffer);
 					}
 				}
@@ -133,7 +134,8 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			memcpy(ackBuf, &reqNum, sizeof(int));
 			for(i = 0; i < WINDOW_SIZE; i++) {
 				receivedMap[i] = 0;
-				write(fd, recDataBuffer[i].buffer, recDataBuffer[i].size);
+				fwrite(recDataBuffer[i].buffer, 1, recDataBuffer[i].size, fd);
+				fflush(fd);
 				free(recDataBuffer[i].buffer);
 			}
 			sequence_base = sequence_max + 1;
