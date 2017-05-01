@@ -30,10 +30,12 @@ int optval; /* flag value for setsockopt */
 socklen_t sendersize;
 int bytesRecvd;
 unsigned long long int bytesToWrite;
+unsigned long long int bytesToTransfer;
 unsigned long sequence_base;
 unsigned long sequence_max;
 unsigned long startind;
 unsigned long endind;
+unsigned long numberOfFrames;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
@@ -51,7 +53,10 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			if(bytesToWrite == 0) {
 				reqNum = 0;
 				memcpy(ackBuf, &reqNum, sizeof(int));
-				sendto(sockfd, ackBuf, sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
+				sequence_base = numberOfFrames;
+				//printf("%lu\n", numberOfFrames);
+				memcpy(ackBuf+sizeof(int), &sequence_base, sizeof(unsigned long));
+				sendto(sockfd, ackBuf, sizeof(int)+sizeof(unsigned long), 0, (struct sockaddr*)&clientaddr, clientlen);
 				for(i = 0; i < WINDOW_SIZE; i++) {
 					if(receivedMap[i] != 0) {
 						write(fd, recDataBuffer[i].buffer, recDataBuffer[i].size);
@@ -81,11 +86,12 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			}
 			unsigned long sequence_num = *((unsigned long *)(recData));
 			int order = (sequence_num)%(WINDOW_SIZE);
+			//printf("sequencenumb: %lu, sequencebase: %lu, seuqncemax: %lu\n", sequence_num, sequence_base, sequence_max);
 			if(sequence_num < sequence_base || sequence_num > sequence_max || receivedMap[order] != 0) {
 				reqNum = 0;
 				memcpy(ackBuf, &reqNum, sizeof(int));
 				memcpy(ackBuf + sizeof(int), &sequence_base, sizeof(unsigned long));
-				printf("%lu\n", sequence_base);
+				//printf("%lu\n", sequence_base);
 				sendto(sockfd, ackBuf, sizeof(unsigned long)+sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 				i--;
 				continue;
@@ -93,6 +99,22 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			int datasize = 0;
 			if(sequence_num == 0) {
 				bytesToWrite = *((unsigned long long int*)(recData+sizeof(unsigned long)));
+				bytesToTransfer = bytesToWrite;
+				int numBytesToRead = FRAME_SIZE - sizeof(unsigned long);
+				int firstBytesToRead = numBytesToRead - sizeof(unsigned long long int);
+				int lastPacketSize = -1;
+				if(bytesToTransfer > firstBytesToRead) {
+					numberOfFrames = (bytesToTransfer-firstBytesToRead)/numBytesToRead + 1;
+					if((bytesToTransfer-firstBytesToRead)%numBytesToRead != 0)
+					{
+						lastPacketSize = bytesToTransfer - firstBytesToRead - ((numberOfFrames-1)*numBytesToRead);
+						numberOfFrames++;
+					}
+				}
+				else {
+					numberOfFrames = 1;
+					lastPacketSize = bytesToTransfer;
+				}
 				datasize = bytesRecvd-(sizeof(unsigned long)+sizeof(unsigned long long int));
 				bytesToWrite -= datasize;
 				recDataBuffer[order].buffer = strdup((char*)(recData+sizeof(unsigned long)+sizeof(unsigned long long int)));
@@ -101,7 +123,7 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 				bytesToWrite -= datasize;
 				recDataBuffer[order].buffer = strdup((char*)(recData+sizeof(unsigned long)));
 			}
-			printf("Received Packet %lu\n", sequence_num);
+			//printf("Received Packet %lu\n", sequence_num);
 			recDataBuffer[order].size = datasize;
 			receivedMap[order] = 1;
 			hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
@@ -130,7 +152,7 @@ void setUpPortInfo(unsigned short int my_port) {
 	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 	struct timeval read_timeout;
 	read_timeout.tv_sec = 0;
-	read_timeout.tv_usec = 10;
+	read_timeout.tv_usec = 1000;
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout));
 
 	bzero((char *) &serveraddr, sizeof(serveraddr));

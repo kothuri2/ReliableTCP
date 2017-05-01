@@ -60,21 +60,19 @@ void* receiveAcks(void * unusedParam) {
 			continue;
 		}
 		//Received an ACK
+		//printf("dfahsdf\n");
 		int numToSend = *((int*)recvBuf);
 		if(numToSend == 0) {
 			unsigned long recSeqBase = *((unsigned long *)(recvBuf+sizeof(int)));
 			//printf("Received a Cumulative ACK %lu\n", recSeqBase);
-			if(numberOfFrames%WINDOW_SIZE == 1 && recSeqBase == (numberOfFrames-1)) {
-				if(again) {
-					numLeft--;
-					sendFlag = 0;
-					resendFlag = 0;
-					pthread_cond_signal(&cv);
+			if(recSeqBase == numberOfFrames) {
+				sendFlag = 0;
+				resendFlag = 0;
+				pthread_cond_signal(&cv);
+				numLeft = 0;
+
 					pthread_mutex_unlock(&mtx);
 					break;
-				}
-				again = 1;
-
 			}
 			if(recSeqBase > sequence_base) {
 				numLeft -= ((sequence_max - sequence_base)+1);
@@ -183,7 +181,7 @@ void setUpPortInfo(const char * receiver_hostname, unsigned short int receiver_p
 
 	struct timeval read_timeout;
 	read_timeout.tv_sec = 0;
-	read_timeout.tv_usec = 10;
+	read_timeout.tv_usec = 1000;
 	setsockopt(globalSocketUDP, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout));
 
 	server = gethostbyname(receiver_hostname);
