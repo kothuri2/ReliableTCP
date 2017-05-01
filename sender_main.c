@@ -31,6 +31,7 @@ pthread_cond_t cv;
 pthread_cond_t ackcv;
 unsigned long numberOfFrames;
 unsigned long numLeft;
+int resendFlag = 0;
 
 typedef struct Frame {
 	unsigned char buf[PAYLOAD_SIZE];
@@ -51,6 +52,7 @@ void* receiveAcks(void * unusedParam) {
 
 		bytesRecvd = recvfrom(globalSocketUDP, recvBuf, 8, 0, (struct sockaddr*)&serveraddr, &serverlen);
 		if(bytesRecvd == -1) {
+			resendFlag = 1;
 			sendFlag = 0;
 			pthread_cond_signal(&cv);
 			pthread_mutex_unlock(&mtx);
@@ -66,6 +68,7 @@ void* receiveAcks(void * unusedParam) {
 			if(sequence_max >= numberOfFrames)
 				sequence_max = numberOfFrames-1;
 			sendFlag = 0;
+			resendFlag = 0;
 			pthread_cond_signal(&cv);
 			if(numLeft == 0) {
 				pthread_mutex_unlock(&mtx);
@@ -88,7 +91,9 @@ void* receiveAcks(void * unusedParam) {
 
 void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* filename, unsigned long long int bytesToTransfer) {
 	int numBytesToRead = PAYLOAD_SIZE - sizeof(unsigned long);
+	printf("numbytes: %d\n", numBytesToRead);
 	int firstBytesToRead = numBytesToRead - sizeof(unsigned long long int);
+	printf("first bytes: %d\n", firstBytesToRead);
 	int lastPacketSize = -1;
 	if(bytesToTransfer > firstBytesToRead) {
 		numberOfFrames = (bytesToTransfer-firstBytesToRead)/numBytesToRead + 1;
@@ -123,30 +128,32 @@ void reliablyTransfer(char* hostname, unsigned short int hostUDPport, char* file
 		for(; i <= sequence_max; i++) {
 			// Transmit the packet
 			memcpy(allFrames[i%WINDOW_SIZE].buf, &i, sizeof(unsigned long));
-			if(i == 0) {
-				memcpy(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), &bytesToTransfer, sizeof(unsigned long long int));
-				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
-					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), lastPacketSize);
-					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), lastPacketSize);
-					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
-					allFrames[i%WINDOW_SIZE].size = sizeof(unsigned long)+sizeof(unsigned long long int)+lastPacketSize;
+			if(!resendFlag) {
+				if(i == 0) {
+					memcpy(allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), &bytesToTransfer, sizeof(unsigned long long int));
+					if(i == (numberOfFrames-1) && lastPacketSize != -1) {
+						read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), lastPacketSize);
+						write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), lastPacketSize);
+						printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
+						allFrames[i%WINDOW_SIZE].size = sizeof(unsigned long)+sizeof(unsigned long long int)+lastPacketSize;
+					} else {
+						read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), firstBytesToRead);
+						write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), firstBytesToRead);
+						printf("Sending packet %lu of %lu\n",*((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
+						allFrames[i%WINDOW_SIZE].size = PAYLOAD_SIZE;
+					}
 				} else {
-					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), firstBytesToRead);
-					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long)+sizeof(unsigned long long int), firstBytesToRead);
-					printf("Sending packet %lu of %lu\n",*((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
-					allFrames[i%WINDOW_SIZE].size = PAYLOAD_SIZE;
-				}
-			} else {
-				if(i == (numberOfFrames-1) && lastPacketSize != -1) {
-					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), lastPacketSize);
-					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), lastPacketSize);
-					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
-					allFrames[i%WINDOW_SIZE].size = sizeof(unsigned long)+lastPacketSize;
-				} else {
-					read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), numBytesToRead);
-					write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), numBytesToRead);
-					printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
-					allFrames[i%WINDOW_SIZE].size = PAYLOAD_SIZE;
+					if(i == (numberOfFrames-1) && lastPacketSize != -1) {
+						read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), lastPacketSize);
+						write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), lastPacketSize);
+						printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
+						allFrames[i%WINDOW_SIZE].size = sizeof(unsigned long)+lastPacketSize;
+					} else {
+						read(fd, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), numBytesToRead);
+						write(fdcheck, allFrames[i%WINDOW_SIZE].buf+sizeof(unsigned long), numBytesToRead);
+						printf("Sending packet %lu of %lu\n", *((unsigned long*)allFrames[i%WINDOW_SIZE].buf)+1, numberOfFrames);
+						allFrames[i%WINDOW_SIZE].size = PAYLOAD_SIZE;
+					}
 				}
 			}
 			sendto(globalSocketUDP, allFrames[i%WINDOW_SIZE].buf, allFrames[i%WINDOW_SIZE].size, 0, (struct sockaddr*)&serveraddr, serverlen);
