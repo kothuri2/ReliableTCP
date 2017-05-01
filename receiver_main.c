@@ -39,7 +39,7 @@ unsigned long numberOfFrames;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
-	int fd = open(destinationFile, O_RDWR | O_APPEND | O_TRUNC | O_CREAT);
+	int fd = open(destinationFile, O_RDWR | O_APPEND | O_TRUNC | O_CREAT, 0666);
 	data* recDataBuffer = malloc(WINDOW_SIZE * sizeof(data));
 	int i;
 	int receivedMap[WINDOW_SIZE];
