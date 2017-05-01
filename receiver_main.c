@@ -37,7 +37,6 @@ long endind;
 
 void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 
-	printf("%s\n", "Waiting for sender...");
 	int fd = open(destinationFile, O_WRONLY | O_APPEND | O_TRUNC | O_CREAT);
 	data* recDataBuffer = malloc(WINDOW_SIZE * sizeof(data));
 	int i;
@@ -56,8 +55,6 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 				for(i = 0; i < WINDOW_SIZE; i++) {
 					if(receivedMap[i] != 0) {
 						write(fd, recDataBuffer[i].buffer, recDataBuffer[i].size);
-						// fwrite(recDataBuffer[i].buffer, 1, recDataBuffer[i].size, fd);
-						// fflush(fd);
 						free(recDataBuffer[i].buffer);
 					}
 				}
@@ -85,6 +82,10 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 			unsigned long sequence_num = *((unsigned long *)(recData));
 			int order = (sequence_num)%(WINDOW_SIZE);
 			if(sequence_num < sequence_base || sequence_num > sequence_max || receivedMap[order] != 0) {
+				reqNum = 0;
+				memcpy(ackBuf, &reqNum, sizeof(int));
+				memcpy(ackBuf, &sequence_base, sizeof(unsigned long));
+				sendto(sockfd, ackBuf, sizeof(unsigned long)+sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 				i--;
 				continue;
 			}
@@ -99,40 +100,33 @@ void reliablyReceive(unsigned short int myUDPport, char* destinationFile) {
 				bytesToWrite -= datasize;
 				recDataBuffer[order].buffer = strdup((char*)(recData+sizeof(unsigned long)));
 			}
+			printf("Received Packet %lu\n", sequence_num);
 			recDataBuffer[order].size = datasize;
 			receivedMap[order] = 1;
-			//printf("bytesToWrite: %llu bytesRecvd: %d sizeof int: %lu, sizeof long: %lu\n", bytesToWrite, bytesRecvd, sizeof(int), sizeof(unsigned long long int));
-			printf("Server received packet %lu\n", sequence_num);
-			printf("order: %d\n", order);
 			hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
 	    hostaddrp = inet_ntoa(clientaddr.sin_addr);
 		}
 		if(reqNum == 0) {
-			// fwrite("New Window\n", 1, 11, fd);
-			// fflush(fd);
 			memcpy(ackBuf, &reqNum, sizeof(int));
 			for(i = 0; i < WINDOW_SIZE; i++) {
 				receivedMap[i] = 0;
-				// fwrite("New Frame\n", 1, 10, fd);
-				// fflush(fd);
 				write(fd, recDataBuffer[i].buffer, recDataBuffer[i].size);
-				// fwrite(recDataBuffer[i].buffer, 1, recDataBuffer[i].size, fd);
-				// fflush(fd);
 				free(recDataBuffer[i].buffer);
 			}
 			sequence_base = sequence_max + 1;
+			memcpy(ackBuf, &sequence_base, sizeof(unsigned long));
 			sequence_max = sequence_base + (WINDOW_SIZE - 1);
 			startind = 0;
 			endind = WINDOW_SIZE;
+			sendto(sockfd, ackBuf, sizeof(unsigned long)+sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 		}
-		sendto(sockfd, ackBuf, reqNum*sizeof(unsigned long) + sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
+		else
+			sendto(sockfd, ackBuf, reqNum*sizeof(unsigned long) + sizeof(int), 0, (struct sockaddr*)&clientaddr, clientlen);
 	}
 }
 
 void setUpPortInfo(unsigned short int my_port) {
 	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-	//optval = 1;
-
 	struct timeval read_timeout;
 	read_timeout.tv_sec = 0;
 	read_timeout.tv_usec = 10;
